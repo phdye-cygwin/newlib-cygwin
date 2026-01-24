@@ -1,0 +1,77 @@
+# POSIX Fork Compliance Tests
+
+This directory contains POSIX fork() compliance tests validating fork semantics.
+
+## Source
+
+Tests are based on the Open POSIX Test Suite (GPL-2):
+https://github.com/emscripten-core/posixtestsuite
+
+## Test Files
+
+### POSIX Assertion Tests (1-1.c through 22-1.c)
+
+| Test | Assertion |
+|------|-----------|
+| 1-1  | Fork concurrency (parent/child run concurrently) |
+| 2-1  | Process state copied (environment, signals) |
+| 3-1  | Child PID is unique |
+| 4-1  | Child PPID equals parent PID |
+| 5-1  | Child PID not active process group ID |
+| 6-1  | Directory streams inherited |
+| 7-1  | Message catalogs inherited |
+| 8-1  | tms_utime/tms_stime reset to 0 |
+| 9-1  | Alarm signals canceled in child |
+| 10-1 | XSI semadj values cleared |
+| 11-1 | File locks NOT inherited |
+| 12-1 | Blocked signals inherited, pending cleared |
+| 13-1 | Interval timers reset |
+| 14-1 | Semaphores inherited |
+| 15-1 | Memory locks NOT inherited |
+| 16-1 | Memory mappings (COW semantics) |
+| 17-1 | SCHED_RR inherited |
+| 17-2 | SCHED_FIFO inherited |
+| 18-1 | Per-process timers NOT inherited |
+| 19-1 | Message queues inherited |
+| 20-1 | Async I/O NOT inherited |
+| 21-1 | Child has single thread |
+| 22-1 | CPU-time clocks init to 0 |
+
+### Custom Tests
+
+| Test | Assertion |
+|------|-----------|
+| fork_fd_inherit | File descriptor inheritance |
+| fork_fd_offset | FD offsets shared between parent/child |
+| fork_return_values | Return values correct (0 child, PID parent) |
+| fork_thread_replica | Thread ID replica in single-threaded child |
+| fork_error | Error handling |
+| fork_eagain | EAGAIN on resource exhaustion |
+| fork_enomem | ENOMEM on memory exhaustion |
+
+## Building
+
+Tests use the testfrmw.h/testfrmw.c framework. Compile with:
+
+    gcc -o test test.c -lpthread -lrt
+
+## Exit Codes
+
+- 0 (PTS_PASS): Test passed
+- 1 (PTS_FAIL): Test failed
+- 2 (PTS_UNRESOLVED): Could not determine result
+- 4 (PTS_UNSUPPORTED): Feature not supported
+- 5 (PTS_UNTESTED): Test skipped
+- 77: Alternative skip code
+
+## Fork Mode Testing
+
+Tests can be run with different fork implementations:
+
+    CYGWIN="fork_mode:legacy" ./test     # Traditional fork
+    CYGWIN="fork_mode:rtlclone" ./test   # RtlCloneUserProcess fork
+
+## License
+
+Tests from Open POSIX Test Suite: GPL-2
+Custom tests: Same as Cygwin (LGPL)
