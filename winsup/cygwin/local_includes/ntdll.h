@@ -92,6 +92,11 @@ extern GUID __cygwin_socket_guid;
 /* Semaphore access rights. */
 #define SEMAPHORE_QUERY_STATE 1
 
+/* RtlCloneUserProcess flags. */
+#define RTL_CLONE_PROCESS_FLAGS_CREATE_SUSPENDED    0x00000001
+#define RTL_CLONE_PROCESS_FLAGS_INHERIT_HANDLES     0x00000002
+#define RTL_CLONE_PROCESS_FLAGS_NO_SYNCHRONIZE      0x00000004
+
 /* Specific ACCESS_MASKSs for objects created in Cygwin. */
 #define CYG_SHARED_DIR_ACCESS	(DIRECTORY_QUERY \
 				 | DIRECTORY_TRAVERSE \
@@ -1039,6 +1044,61 @@ typedef struct _RTL_USER_PROCESS_PARAMETERS
   UNICODE_STRING RuntimeInfo;
 } RTL_USER_PROCESS_PARAMETERS, *PRTL_USER_PROCESS_PARAMETERS;
 
+/* SECTION_IMAGE_INFORMATION - returned by NtQuerySection and used by
+   RtlCloneUserProcess.  Not defined in standard Windows headers. */
+typedef struct _SECTION_IMAGE_INFORMATION
+{
+  PVOID TransferAddress;
+  ULONG ZeroBits;
+  SIZE_T MaximumStackSize;
+  SIZE_T CommittedStackSize;
+  ULONG SubSystemType;
+  union {
+    struct {
+      USHORT SubSystemMinorVersion;
+      USHORT SubSystemMajorVersion;
+    };
+    ULONG SubSystemVersion;
+  };
+  union {
+    struct {
+      USHORT MajorOperatingSystemVersion;
+      USHORT MinorOperatingSystemVersion;
+    };
+    ULONG OperatingSystemVersion;
+  };
+  USHORT ImageCharacteristics;
+  USHORT DllCharacteristics;
+  USHORT Machine;
+  BOOLEAN ImageContainsCode;
+  union {
+    UCHAR ImageFlags;
+    struct {
+      UCHAR ComPlusNativeReady : 1;
+      UCHAR ComPlusILOnly : 1;
+      UCHAR ImageDynamicallyRelocated : 1;
+      UCHAR ImageMappedFlat : 1;
+      UCHAR BaseBelow4gb : 1;
+      UCHAR ComPlusPrefer32bit : 1;
+      UCHAR Reserved : 2;
+    };
+  };
+  ULONG LoaderFlags;
+  ULONG ImageFileSize;
+  ULONG CheckSum;
+} SECTION_IMAGE_INFORMATION, *PSECTION_IMAGE_INFORMATION;
+
+/* RTL_USER_PROCESS_INFORMATION - returned by RtlCloneUserProcess
+   with information about the cloned child process. */
+typedef struct _RTL_USER_PROCESS_INFORMATION
+{
+  ULONG Length;
+  HANDLE Process;
+  HANDLE Thread;
+  CLIENT_ID ClientId;
+  SECTION_IMAGE_INFORMATION ImageInformation;
+} RTL_USER_PROCESS_INFORMATION, *PRTL_USER_PROCESS_INFORMATION;
+
 typedef struct _PEB
 {
   BYTE Reserved1[2];
@@ -1593,6 +1653,14 @@ extern "C"
   NTSTATUS RtlAppendUnicodeToString (PUNICODE_STRING, PCWSTR);
   NTSTATUS RtlAppendUnicodeStringToString (PUNICODE_STRING, PUNICODE_STRING);
   NTSTATUS RtlCheckRegistryKey (ULONG, PCWSTR);
+  /* RtlCloneUserProcess - creates a copy-on-write clone of the current
+     process, similar to Unix fork().  Returns STATUS_SUCCESS in parent
+     (with ProcessInformation filled in) or STATUS_PROCESS_CLONED in child. */
+  NTSTATUS RtlCloneUserProcess (ULONG ProcessFlags,
+				PSECURITY_DESCRIPTOR ProcessSecurityDescriptor,
+				PSECURITY_DESCRIPTOR ThreadSecurityDescriptor,
+				HANDLE DebugPort,
+				PRTL_USER_PROCESS_INFORMATION ProcessInformation);
   LONG RtlCompareUnicodeString (PUNICODE_STRING, PUNICODE_STRING, BOOLEAN);
   NTSTATUS RtlConvertSidToUnicodeString (PUNICODE_STRING, PSID, BOOLEAN);
   NTSTATUS RtlConvertToAutoInheritSecurityObject (PSECURITY_DESCRIPTOR,

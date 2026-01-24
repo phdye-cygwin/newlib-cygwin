@@ -691,6 +691,13 @@ pipe_data_available (int fd, fhandler_base *fh, HANDLE h, int mode)
 
 SRWLOCK ptym_peek_lock = SRWLOCK_INIT;
 
+/* Reinitialize select lock after RtlCloneUserProcess. */
+void
+select_reinit_lock_after_clone ()
+{
+  ptym_peek_lock = SRWLOCK_INIT;
+}
+
 static int
 peek_pipe (select_record *s, bool from_select)
 {

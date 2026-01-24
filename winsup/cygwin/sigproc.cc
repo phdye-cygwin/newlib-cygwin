@@ -121,6 +121,7 @@ class pending_signals
 
 public:
   pending_signals (): queue_left (SIGQUEUE_MAX), queue_lock (SRWLOCK_INIT) {}
+  void reinit_lock_after_clone () { queue_lock = SRWLOCK_INIT; }
   void add (sigpacket&);
   bool pending () {retry = !!start.next; return retry;}
   void clear (int sig, bool need_lock);
@@ -131,6 +132,19 @@ public:
 };
 
 static NO_COPY pending_signals sigq;
+
+/* Reinitialize sigproc lock after RtlCloneUserProcess. */
+void
+sigproc_reinit_lock_after_clone ()
+{
+  sigq.reinit_lock_after_clone ();
+
+  /* Reset sync_proc_subproc muto.  After RtlCloneUserProcess, the child has
+     a COW copy of the parent's muto including the bruteforce event handle.
+     That handle is invalid in the child's handle table.  Reset it so
+     sigproc_init() will create a fresh event. */
+  sync_proc_subproc.reset_after_clone ();
+}
 
 /* Functions */
 void
@@ -517,6 +531,7 @@ sig_dispatch_pending (bool fast)
   if (sigq.pending () && &_my_tls != _sig_tls)
     sig_send (myself, fast ? __SIGFLUSHFAST : __SIGFLUSH);
 }
+
 
 /* Signal thread initialization.  Called from dll_crt0_1.
    This routine starts the signal handling thread.  */

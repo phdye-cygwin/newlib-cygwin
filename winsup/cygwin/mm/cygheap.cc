@@ -37,6 +37,13 @@ void NO_COPY *cygheap_max;
 
 SRWLOCK NO_COPY init_cygheap::cygheap_protect = SRWLOCK_INIT;
 
+/* Reinitialize cygheap lock after RtlCloneUserProcess. */
+void
+cygheap_reinit_lock_after_clone ()
+{
+  init_cygheap::cygheap_protect = SRWLOCK_INIT;
+}
+
 struct cygheap_entry
 {
   int type;

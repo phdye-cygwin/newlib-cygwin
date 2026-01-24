@@ -23,12 +23,20 @@ details. */
 class lock_debug
 {
   static NO_COPY SRWLOCK lock;
+  friend void debug_reinit_lock_after_clone ();
  public:
   lock_debug () { AcquireSRWLockExclusive (&lock); }
   ~lock_debug () { ReleaseSRWLockExclusive (&lock); }
 };
 
 SRWLOCK NO_COPY lock_debug::lock = SRWLOCK_INIT;
+
+/* Reinitialize debug lock after RtlCloneUserProcess. */
+void
+debug_reinit_lock_after_clone ()
+{
+  lock_debug::lock = SRWLOCK_INIT;
+}
 
 static bool mark_closed (const char *, int, HANDLE, const char *, bool);
 
@@ -212,5 +220,11 @@ close_handle (const char *func, int ln, HANDLE h, const char *name, bool force)
       try_to_debug ();
     }
   return ret;
+}
+#else /* !DEBUGGING */
+/* Stub for non-debugging builds - no lock to reinit */
+void
+debug_reinit_lock_after_clone ()
+{
 }
 #endif /*DEBUGGING*/

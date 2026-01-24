@@ -43,6 +43,14 @@ static fhandler_dev_zero fh_anonymous;
 
 /* Used for thread synchronization while accessing mmap bookkeeping lists. */
 static NO_COPY SRWLOCK mmap_lock = SRWLOCK_INIT;
+
+/* Reinitialize mmap lock after RtlCloneUserProcess. */
+void
+mmap_reinit_lock_after_clone ()
+{
+  mmap_lock = SRWLOCK_INIT;
+}
+
 #define LIST_WRITE_LOCK()    (AcquireSRWLockExclusive (&mmap_lock))
 #define LIST_WRITE_UNLOCK()  (ReleaseSRWLockExclusive (&mmap_lock))
 #define LIST_READ_LOCK()    (AcquireSRWLockShared (&mmap_lock))

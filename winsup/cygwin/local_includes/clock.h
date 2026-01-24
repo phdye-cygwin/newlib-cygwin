@@ -125,6 +125,7 @@ class clk_tai_t : public clk_realtime_t
   virtual int now (clockid_t, struct timespec *);
 public:
   virtual uint16_t get_leap_secs () { init (); return leap_secs; }
+  friend void clock_reinit_lock_after_clone ();
 };
 
 class clk_process_t : public clk_t

@@ -21,6 +21,13 @@ details. */
 
 timer_tracker NO_COPY itimer_tracker (CLOCK_REALTIME, NULL);
 
+/* Reinitialize posix timer lock after RtlCloneUserProcess. */
+void
+posix_timer_reinit_lock_after_clone ()
+{
+  itimer_tracker.reinit_lock_after_clone ();
+}
+
 bool
 timer_tracker::cancel ()
 {

@@ -114,6 +114,14 @@ struct shm_attached_list {
 static SLIST_HEAD (, shm_attached_list) sph_list;
 
 static NO_COPY SRWLOCK shm_lock = SRWLOCK_INIT;
+
+/* Reinitialize shm lock after RtlCloneUserProcess. */
+void
+shm_reinit_lock_after_clone ()
+{
+  shm_lock = SRWLOCK_INIT;
+}
+
 #define SLIST_LOCK()    (AcquireSRWLockExclusive (&shm_lock))
 #define SLIST_UNLOCK()  (ReleaseSRWLockExclusive (&shm_lock))
 

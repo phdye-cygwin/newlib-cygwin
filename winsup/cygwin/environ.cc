@@ -90,6 +90,21 @@ set_winsymlinks (const char *buf)
 			? WSYM_nativestrict : WSYM_native;
 }
 
+/* Set fork implementation mode:
+   "legacy"   - Traditional fork() using CreateProcess + WriteProcessMemory
+   "rtlclone" - Use RtlCloneUserProcess for copy-on-write semantics
+   "auto"     - Use RtlCloneUserProcess if available, fallback to legacy */
+static void
+set_fork_mode (const char *buf)
+{
+  if (!buf || !*buf || ascii_strncasematch (buf, "legacy", 6))
+    fork_mode = FORK_legacy;
+  else if (ascii_strncasematch (buf, "rtlclone", 8))
+    fork_mode = FORK_rtlclone;
+  else if (ascii_strncasematch (buf, "auto", 4))
+    fork_mode = FORK_auto;
+}
+
 /* The structure below is used to set up an array which is used to
    parse the CYGWIN environment variable or, if enabled, options from
    the registry.  */
@@ -116,6 +131,7 @@ static struct parse_thing
   {"disable_pcon", {&disable_pcon}, setbool, NULL, {{false}, {true}}},
   {"error_start", {func: error_start_init}, isfunc, NULL, {{0}, {0}}},
   {"export", {&export_settings}, setbool, NULL, {{false}, {true}}},
+  {"fork_mode", {func: set_fork_mode}, isfunc, NULL, {{0}, {s: "legacy"}}},
   {"glob", {func: glob_init}, isfunc, NULL, {{0}, {s: "normal"}}},
   {"pipe_byte", {&pipe_byte}, setbool, NULL, {{false}, {true}}},
   {"proc_retry", {func: set_proc_retry}, isfunc, NULL, {{0}, {5}}},

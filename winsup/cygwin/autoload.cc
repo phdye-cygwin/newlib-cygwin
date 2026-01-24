@@ -479,6 +479,9 @@ LoadDLLfuncEx (SetThreadDescription, KernelBase, 1)
 LoadDLLfunc (VirtualAlloc2, KernelBase)
 
 LoadDLLfunc (NtMapViewOfSectionEx, ntdll)
+/* RtlCloneUserProcess: if unavailable, returns -1 (0xFFFFFFFF) and sets
+   GetLastError() to ERROR_PROC_NOT_FOUND.  The 0xFFFF is sign-extended. */
+LoadDLLfuncEx2 (RtlCloneUserProcess, ntdll, 1, 0xFFFF)
 LoadDLLfuncEx (RtlSetProcessPlaceholderCompatibilityMode, ntdll, 1)
 
 LoadDLLfunc (ldap_bind_s, wldap32)

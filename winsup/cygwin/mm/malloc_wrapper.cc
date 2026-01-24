@@ -336,6 +336,14 @@ strdup (const char *s)
 
 SRWLOCK NO_COPY mallock = SRWLOCK_INIT;
 
+/* Reinitialize malloc lock after RtlCloneUserProcess.
+   This MUST be called before any memory allocation in the child. */
+void
+malloc_reinit_lock_after_clone ()
+{
+  mallock = SRWLOCK_INIT;
+}
+
 void
 malloc_init ()
 {

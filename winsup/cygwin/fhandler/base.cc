@@ -29,10 +29,24 @@ details. */
 #include "shared_info.h"
 #include <asm/socket.h>
 #include "cygwait.h"
+#include "lock_reinit.h"
 
 static const int CHUNK_SIZE = 1024; /* Used for crlf conversions */
 
 struct __cygwin_perfile *perfile_table;
+
+/* NPFS handle and lock for named pipe operations */
+static NO_COPY SRWLOCK npfs_lock = SRWLOCK_INIT;
+static NO_COPY HANDLE npfs_dirh;
+
+/* Reinitialize fhandler locks after RtlCloneUserProcess. */
+void
+fhandler_reinit_lock_after_clone ()
+{
+  npfs_lock = SRWLOCK_INIT;
+  /* Note: npfs_dirh is inherited via COW and should remain valid
+     in the child process after RtlCloneUserProcess. */
+}
 
 int
 fhandler_base::puts_readahead (const char *s, size_t len)
@@ -1639,7 +1653,11 @@ fhandler_base::fork_fixup (HANDLE parent, HANDLE &h, const char *name)
 {
   HANDLE oh = h;
   bool res = false;
-  if (!close_on_exec ())
+  /* For RtlCloneUserProcess child, we must duplicate ALL handles from the
+     parent because handle inheritance via RTL_CLONE_PROCESS_FLAGS_INHERIT_HANDLES
+     doesn't work reliably for all handle types.  For legacy CreateProcess fork,
+     handles without close_on_exec are inherited automatically. */
+  if (!close_on_exec () && !rtlclone_fixup_in_progress)
     debug_printf ("handle %p already opened", h);
   else if (!DuplicateHandle (parent, h, GetCurrentProcess (), &h,
 			     0, !close_on_exec (), DUPLICATE_SAME_ACCESS))
@@ -1968,9 +1986,7 @@ fhandler_base::fpathconf (int v)
 NTSTATUS
 fhandler_base::npfs_handle (HANDLE &nph)
 {
-  static NO_COPY SRWLOCK npfs_lock;
-  static NO_COPY HANDLE npfs_dirh;
-
+  /* npfs_lock and npfs_dirh moved to file scope for lock reinit support */
   NTSTATUS status = STATUS_SUCCESS;
   OBJECT_ATTRIBUTES attr;
   IO_STATUS_BLOCK io;

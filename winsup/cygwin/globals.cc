@@ -59,6 +59,18 @@ enum winsym_t
   WSYM_sysfile,
 };
 
+/* The fork implementation to use.  The value is set depending on the
+   "fork_mode" setting of the CYGWIN environment variable.
+   - FORK_legacy: Traditional fork() using CreateProcess + WriteProcessMemory
+   - FORK_rtlclone: Use RtlCloneUserProcess for copy-on-write semantics
+   - FORK_auto: Use RtlCloneUserProcess if available, fallback to legacy */
+enum fork_mode_t
+{
+  FORK_legacy = 0,
+  FORK_rtlclone,
+  FORK_auto,
+};
+
 exit_states NO_COPY exit_state;
 
 /* Set in init.cc.  Used to check if Cygwin DLL is dynamically loaded. */
@@ -71,6 +83,7 @@ bool pipe_byte = true; /* Default to byte mode so that C# programs work. */
 bool reset_com;
 bool wincmdln;
 winsym_t allow_winsymlinks = WSYM_default;
+fork_mode_t fork_mode = FORK_legacy;
 bool disable_pcon;
 bool winjitdebug = false;
 

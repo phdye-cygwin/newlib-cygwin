@@ -500,6 +500,7 @@ struct init_cygheap: public mini_cygheap
 {
 private:
   static SRWLOCK cygheap_protect;
+  friend void cygheap_reinit_lock_after_clone ();
 public:
   _cmalloc_entry *chain;
   char *buckets[NBUCKETS];

@@ -47,6 +47,13 @@ clk_realtime_t::init ()
 uint16_t clk_tai_t::leap_secs = 0;
 SRWLOCK NO_COPY clk_tai_t::leap_lock = SRWLOCK_INIT;
 
+/* Reinitialize clock lock after RtlCloneUserProcess. */
+void
+clock_reinit_lock_after_clone ()
+{
+  clk_tai_t::leap_lock = SRWLOCK_INIT;
+}
+
 /* This is the structured data stored in the REG_BINARY registry value
    HKLM\SYSTEM\CurrentControlSet\Control\LeapSecondInformation\LeapSeconds,
    just like the binary representation of an array of reg_leap_secs_t.

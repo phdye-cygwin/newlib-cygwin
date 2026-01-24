@@ -726,6 +726,15 @@ static NO_COPY SRWLOCK slist_lock = SRWLOCK_INIT;
 #define SLIST_LOCK()    (AcquireSRWLockExclusive (&slist_lock))
 #define SLIST_UNLOCK()  (ReleaseSRWLockExclusive (&slist_lock))
 
+/* Reinitialize security helper locks after RtlCloneUserProcess. */
+void
+sec_reinit_locks_after_clone ()
+{
+  authz_lock = SRWLOCK_INIT;
+  user_ctx_lock = SRWLOCK_INIT;
+  slist_lock = SRWLOCK_INIT;
+}
+
 static LUID authz_dummy_luid = { 0 };
 
 class authz_ctx_cache_entry

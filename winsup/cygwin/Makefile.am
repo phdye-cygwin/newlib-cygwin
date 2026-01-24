@@ -321,6 +321,7 @@ DLL_FILES= \
 	ipc.cc \
 	kernel32.cc \
 	ldap.cc \
+	lock_reinit.cc \
 	lib/pthreadconst.S \
 	libstdcxx_wrapper.cc \
 	loadavg.cc \

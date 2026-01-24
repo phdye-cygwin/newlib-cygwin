@@ -137,6 +137,13 @@ public:
 
 SRWLOCK NO_COPY cwdstuff::cwd_lock;
 
+/* Reinitialize cwd lock after RtlCloneUserProcess. */
+void
+cwdstuff_reinit_lock_after_clone ()
+{
+  cwdstuff::cwd_lock = SRWLOCK_INIT;
+}
+
 static const GUID GUID_shortcut
 			= { 0x00021401L, 0, 0, {0xc0, 0, 0, 0, 0, 0, 0, 0x46}};
 

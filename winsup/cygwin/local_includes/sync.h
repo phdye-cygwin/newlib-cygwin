@@ -26,6 +26,13 @@ public:
   /* The real constructor. */
   muto *init (const char *);
 
+  /* Reset after RtlCloneUserProcess - clear state so init() can reinitialize.
+     Must be called BEFORE init() in the clone child since the bruteforce handle
+     from the parent is invalid in the child's handle table.
+     IMPORTANT: Must also reset name, otherwise init() sees name!=NULL and enters
+     an infinite loop waiting for bruteforce (which we just set to NULL). */
+  void reset_after_clone () { name = NULL; bruteforce = NULL; }
+
 #if 0	/* FIXME: See comment in sync.cc */
   ~muto ()
 #endif
@@ -44,6 +51,7 @@ class lock_process
   static muto locker;
 public:
   static void init () {locker.init ("lock_process");}
+  static void reset_after_clone () { locker.reset_after_clone (); }
   void dont_bother () {skip_unlock = true;}
   lock_process (bool exiting = false)
   {

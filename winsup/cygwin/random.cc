@@ -37,6 +37,13 @@ SRWLOCK NO_COPY rndlock = SRWLOCK_INIT;
 # define __random_unlock()	{ if (__isthreaded) \
 					ReleaseSRWLockExclusive (&rndlock); }
 
+/* Reinitialize random lock after RtlCloneUserProcess. */
+void
+random_reinit_lock_after_clone ()
+{
+  rndlock = SRWLOCK_INIT;
+}
+
 extern "C" {
 #if defined(LIBC_SCCS) && !defined(lint)
 static char sccsid[] = "@(#)random.c	8.2 (Berkeley) 5/19/95";

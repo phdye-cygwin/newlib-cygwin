@@ -33,6 +33,17 @@ HANDLE NO_COPY cygwin_user_h;
    NT namespace used to implement global objects including shared memory. */
 
 static HANDLE NO_COPY shared_parent_dir;
+static HANDLE NO_COPY session_parent_dir;
+
+/* Reinitialize shared directory handles after RtlCloneUserProcess.
+   The NO_COPY handles inherit stale parent values via COW and must be
+   reset so they get re-opened on first use in the child. */
+void
+shared_reinit_after_clone ()
+{
+  shared_parent_dir = NULL;
+  session_parent_dir = NULL;
+}
 
 HANDLE
 get_shared_parent_dir ()
@@ -58,8 +69,6 @@ get_shared_parent_dir ()
     }
   return shared_parent_dir;
 }
-
-static HANDLE NO_COPY session_parent_dir;
 
 HANDLE
 get_session_parent_dir ()

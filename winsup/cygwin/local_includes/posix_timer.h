@@ -49,6 +49,7 @@ class timer_tracker
 
   DWORD thread_func ();
   static void fixup_after_fork ();
+  void reinit_lock_after_clone () { srwlock = SRWLOCK_INIT; }
 };
 
 #endif /* __POSIX_TIMER_H__ */

@@ -15,6 +15,15 @@ details. */
 
 static NO_COPY SRWLOCK tzset_guard = SRWLOCK_INIT;
 
+/* Reinitialize tzset lock after RtlCloneUserProcess. */
+void
+tzset_reinit_lock_after_clone (void)
+{
+  /* Can't use SRWLOCK_INIT in assignment in C (compound literal).
+     SRWLOCK_INIT is {0}, so memset achieves the same effect. */
+  memset (&tzset_guard, 0, sizeof (tzset_guard));
+}
+
 // Convert these NetBSD rwlock ops into SRWLocks
 #define rwlock_wrlock(X) AcquireSRWLockExclusive(&tzset_guard)
 #define rwlock_unlock(X) ReleaseSRWLockExclusive(&tzset_guard)
