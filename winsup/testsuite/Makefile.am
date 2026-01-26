@@ -317,6 +317,36 @@ check_PROGRAMS = \
 	winsup.api/posix_spawn/signals \
 	winsup.api/posix_spawn/spawnp \
 	winsup.api/posix_spawn/win32 \
+	winsup.api/fork/1-1 \
+	winsup.api/fork/2-1 \
+	winsup.api/fork/3-1 \
+	winsup.api/fork/4-1 \
+	winsup.api/fork/5-1 \
+	winsup.api/fork/6-1 \
+	winsup.api/fork/7-1 \
+	winsup.api/fork/8-1 \
+	winsup.api/fork/9-1 \
+	winsup.api/fork/10-1 \
+	winsup.api/fork/11-1 \
+	winsup.api/fork/12-1 \
+	winsup.api/fork/13-1 \
+	winsup.api/fork/14-1 \
+	winsup.api/fork/15-1 \
+	winsup.api/fork/16-1 \
+	winsup.api/fork/17-1 \
+	winsup.api/fork/17-2 \
+	winsup.api/fork/18-1 \
+	winsup.api/fork/19-1 \
+	winsup.api/fork/20-1 \
+	winsup.api/fork/21-1 \
+	winsup.api/fork/22-1 \
+	winsup.api/fork/fork_eagain \
+	winsup.api/fork/fork_enomem \
+	winsup.api/fork/fork_error \
+	winsup.api/fork/fork_fd_inherit \
+	winsup.api/fork/fork_fd_offset \
+	winsup.api/fork/fork_return_values \
+	winsup.api/fork/fork_thread_replica \
 	winsup.api/samples/sample-fail \
 	winsup.api/samples/sample-pass
 # winsup.api/ltp/ulimit01 is omitted as we don't have <ulimit.h>
@@ -334,6 +364,10 @@ LDADD = $(builddir)/libltp.a $(builddir)/../cygwin/binmode.o $(LDADD_FOR_TESTDLL
 # additional flags for specific test executables
 winsup_api_devdsp_LDADD = -lwinmm $(LDADD)
 
+# fork_thread_replica uses __thread TLS which requires libgcc_eh for emutls
+# libgcc_eh depends on pthread/libc symbols, so we need libcygwin again at end
+winsup_api_fork_fork_thread_replica_LDADD = $(LDADD) -lgcc_eh $(builddir)/../cygwin/libcygwin.a
+
 # all tests
 TESTS = $(check_PROGRAMS) \
 	mingw/cygload
@@ -344,7 +378,11 @@ XFAIL_TESTS = \
 	winsup.api/ltp/setuid02 \
 	winsup.api/ltp/ulimit01 \
 	winsup.api/ltp/unlink08 \
+	winsup.api/fork/13-1 \
+	winsup.api/fork/fork_eagain \
 	winsup.api/samples/sample-fail
+# fork/13-1: ITIMER_VIRTUAL not supported on Cygwin
+# fork/fork_eagain: cannot trigger EAGAIN (system limits too high)
 
 # cygrun.sh test-runner script, and variables used by it:
 LOG_COMPILER = $(srcdir)/cygrun.sh

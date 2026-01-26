@@ -238,7 +238,9 @@ int main( int argc, char * argv[] )
 		        || ( ( sa_child.sa_flags & SA_RESETHAND ) != 0 )
 		        || ( ( sa_child.sa_flags & SA_RESTART ) != 0 )
 		        || ( ( sa_child.sa_flags & SA_SIGINFO ) != 0 )
+#ifdef SA_NOCLDWAIT  /* Not implemented in Cygwin - see issue/SA_NOCLDWAIT-missing.md */
 		        || ( ( sa_child.sa_flags & SA_NOCLDWAIT ) != 0 )
+#endif
 		        || ( ( sa_child.sa_flags & SA_NODEFER ) != 0 )
 #endif
 		   )
