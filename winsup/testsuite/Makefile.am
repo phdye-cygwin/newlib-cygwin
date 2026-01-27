@@ -378,11 +378,17 @@ XFAIL_TESTS = \
 	winsup.api/ltp/setuid02 \
 	winsup.api/ltp/ulimit01 \
 	winsup.api/ltp/unlink08 \
+	winsup.api/fork/7-1 \
+	winsup.api/fork/10-1 \
 	winsup.api/fork/13-1 \
+	winsup.api/fork/14-1 \
+	winsup.api/fork/15-1 \
+	winsup.api/fork/19-1 \
 	winsup.api/fork/fork_eagain \
 	winsup.api/samples/sample-fail
+# fork/7-1, 10-1, 14-1, 15-1, 19-1: require elevated privileges (fail under cygdrop)
 # fork/13-1: ITIMER_VIRTUAL not supported on Cygwin
-# fork/fork_eagain: cannot trigger EAGAIN (system limits too high)
+# fork/fork_eagain: cannot trigger EAGAIN without RLIMIT_NPROC
 
 # cygrun.sh test-runner script, and variables used by it:
 LOG_COMPILER = $(srcdir)/cygrun.sh
