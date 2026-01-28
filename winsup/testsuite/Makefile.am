@@ -177,6 +177,7 @@ check_PROGRAMS = \
 	winsup.api/ltp/pipe09 \
 	winsup.api/ltp/pipe10 \
 	winsup.api/ltp/pipe11 \
+	winsup.api/ltp/pipe12 \
 	winsup.api/ltp/poll01 \
 	winsup.api/ltp/read01 \
 	winsup.api/ltp/read04 \
@@ -385,10 +386,12 @@ XFAIL_TESTS = \
 	winsup.api/fork/15-1 \
 	winsup.api/fork/19-1 \
 	winsup.api/fork/fork_eagain \
+	winsup.api/ltp/pipe12 \
 	winsup.api/samples/sample-fail
 # fork/7-1, 10-1, 14-1, 15-1, 19-1: require elevated privileges (fail under cygdrop)
 # fork/13-1: ITIMER_VIRTUAL not supported on Cygwin
 # fork/fork_eagain: cannot trigger EAGAIN without RLIMIT_NPROC
+# pipe12: reading pipe via /proc/<pid>/fd/N hangs after process exits (unfixed bug)
 
 # cygrun.sh test-runner script, and variables used by it:
 LOG_COMPILER = $(srcdir)/cygrun.sh
