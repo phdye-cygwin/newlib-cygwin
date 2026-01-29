@@ -349,6 +349,30 @@ check_PROGRAMS = \
 	winsup.api/fork/fork_return_values \
 	winsup.api/fork/fork_signal_delivery \
 	winsup.api/fork/fork_thread_replica \
+	winsup.api/fork/fork_child_subsystems \
+	winsup.api/fork/fork_cloexec \
+	winsup.api/fork/fork_cow \
+	winsup.api/fork/fork_credentials \
+	winsup.api/fork/fork_cwd \
+	winsup.api/fork/fork_exec \
+	winsup.api/fork/fork_lock_state \
+	winsup.api/fork/fork_mmap \
+	winsup.api/fork/fork_mode_config \
+	winsup.api/fork/fork_mode_fallback \
+	winsup.api/fork/fork_nested \
+	winsup.api/fork/fork_nice \
+	winsup.api/fork/fork_parent_race \
+	winsup.api/fork/fork_pending_signals \
+	winsup.api/fork/fork_pgid \
+	winsup.api/fork/fork_pipe_inherit \
+	winsup.api/fork/fork_pty_inherit \
+	winsup.api/fork/fork_rapid \
+	winsup.api/fork/fork_rlimits \
+	winsup.api/fork/fork_session \
+	winsup.api/fork/fork_socket_inherit \
+	winsup.api/fork/fork_stress \
+	winsup.api/fork/fork_umask \
+	winsup.api/fork/fork_waitpid \
 	winsup.api/samples/sample-fail \
 	winsup.api/samples/sample-pass
 # winsup.api/ltp/ulimit01 is omitted as we don't have <ulimit.h>
@@ -369,6 +393,9 @@ winsup_api_devdsp_LDADD = -lwinmm $(LDADD)
 # fork_thread_replica uses __thread TLS which requires libgcc_eh for emutls
 # libgcc_eh depends on pthread/libc symbols, so we need libcygwin again at end
 winsup_api_fork_fork_thread_replica_LDADD = $(LDADD) -lgcc_eh $(builddir)/../cygwin/libcygwin.a
+
+# fork_child_subsystems uses dlopen/dlsym/dlclose
+winsup_api_fork_fork_child_subsystems_LDADD = $(LDADD) -ldl
 
 # all tests
 TESTS = $(check_PROGRAMS) \

@@ -23,6 +23,7 @@ details. */
 #include "shared_info.h"
 #include "dll_init.h"
 #include "cygmalloc.h"
+#include "miscfuncs.h"
 #include "ntdll.h"
 #include "lock_reinit.h"
 #include "wincap.h"
@@ -848,11 +849,16 @@ dofork_rtlclone (void **proc)
   /* Create process tracking pipe BEFORE cloning so child inherits wr_proc_pipe.
      This is similar to what child_info::prefork() does for legacy fork.
      The pipe is used by the parent to track child state (via proc_waiter thread)
-     and by the child to notify parent of state changes (via alert_parent). */
-  if (!CreatePipe (&rd_proc_pipe, &wr_proc_pipe, &sec_none_nih, 16))
+     and by the child to notify parent of state changes (via alert_parent).
+
+     Use NT native create_pipe() instead of Win32 CreatePipe() because
+     kernel32/kernelbase internally caches a handle to \Device\NamedPipe
+     that is stale in processes created by RtlCloneUserProcess (the cached
+     handle is non-inheritable and not in the child's handle table). */
+  if (!create_pipe (&rd_proc_pipe, &wr_proc_pipe, &sec_none_nih, 16))
     {
-      __seterrno ();
-      debug_printf ("CreatePipe for proc tracking failed, %E");
+      debug_printf ("create_pipe failed for proc tracking pipe, errno %d",
+		    get_errno ());
       return -1;
     }
 
@@ -862,7 +868,6 @@ dofork_rtlclone (void **proc)
 			     HANDLE_FLAG_INHERIT))
     {
       __seterrno ();
-      debug_printf ("SetHandleInformation for wr_proc_pipe failed, %E");
       CloseHandle (rd_proc_pipe);
       CloseHandle (wr_proc_pipe);
       return -1;
@@ -881,7 +886,6 @@ dofork_rtlclone (void **proc)
 			0, TRUE /* inheritable */, DUPLICATE_SAME_ACCESS))
     {
       __seterrno ();
-      debug_printf ("DuplicateHandle for parent_handle failed, %E");
       CloseHandle (rd_proc_pipe);
       CloseHandle (wr_proc_pipe);
       return -1;
@@ -897,7 +901,6 @@ dofork_rtlclone (void **proc)
   if (!fixup_evt)
     {
       __seterrno ();
-      debug_printf ("CreateEvent for fixup_done failed, %E");
       CloseHandle (rd_proc_pipe);
       CloseHandle (wr_proc_pipe);
       CloseHandle (parent_handle);
@@ -1003,6 +1006,14 @@ dofork_rtlclone (void **proc)
 	  _main_tls = &_my_tls;
 	  _main_tls->init_thread (NULL, NULL);
 	}
+
+      /* Re-open NO_COPY handles from globals.cc that were opened without
+	 OBJ_INHERIT in dcrt0.cc.  The COW copies are stale handle values
+	 that don't exist in this child's handle table. */
+      DuplicateHandle (GetCurrentProcess (), GetCurrentThread (),
+		       GetCurrentProcess (), &hMainThread,
+		       0, false, DUPLICATE_SAME_ACCESS);
+      NtOpenProcessToken (NtCurrentProcess (), MAXIMUM_ALLOWED, &hProcToken);
 
       /* Set up privileges */
       set_cygwin_privileges (hProcToken);

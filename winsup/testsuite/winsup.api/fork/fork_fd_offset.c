@@ -29,7 +29,7 @@
 #include "testfrmw.h"
 #include "testfrmw.c"
 
-#define TEST_FILE "/tmp/fork_fd_offset_test.tmp"
+#define TEST_FILE "fork_fd_offset_test.tmp"
 #define FILE_SIZE 1000
 #define INITIAL_OFFSET 100
 #define CHILD_OFFSET 500

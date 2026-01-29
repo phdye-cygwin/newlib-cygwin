@@ -44,8 +44,11 @@ void
 fhandler_reinit_lock_after_clone ()
 {
   npfs_lock = SRWLOCK_INIT;
-  /* Note: npfs_dirh is inherited via COW and should remain valid
-     in the child process after RtlCloneUserProcess. */
+  /* npfs_dirh was opened without OBJ_INHERIT, so it's NOT in the child's
+     handle table after RtlCloneUserProcess (only inheritable handles are
+     copied).  The COW memory still holds the parent's stale handle value.
+     Clear it so npfs_handle() re-opens it on first use. */
+  npfs_dirh = NULL;
 }
 
 int
