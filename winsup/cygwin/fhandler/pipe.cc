@@ -188,6 +188,16 @@ fhandler_pipe::open (int flags, mode_t mode)
     }
   init (nio_hdl, fh->get_access (), mode & O_TEXT ?: O_BINARY,
 	fh->get_plain_ino ());
+  /* open_setup creates pipe_mtx which raw_read needs.  Without it,
+     raw_read blocks forever on cygwait(NULL, INFINITE).  This is
+     needed because fhandler_pipe doesn't use archetypes, so
+     open_with_arch never calls open_setup for us. */
+  if (!open_setup (flags))
+    {
+      cfree (fh);
+      CloseHandle (proc);
+      return 0;
+    }
   cfree (fh);
   CloseHandle (proc);
   return 1;
