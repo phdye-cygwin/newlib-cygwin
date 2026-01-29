@@ -296,6 +296,76 @@ set_and_check_winprio (HANDLE proc, DWORD prio, bool set /* = true */)
   return ret;
 }
 
+/* Create an anonymous pipe pair using NT native APIs.
+   This bypasses Win32 CreatePipe() which uses kernel32-internal cached
+   handles that are stale in processes created by RtlCloneUserProcess.
+   Returns true on success, false on failure (errno set). */
+bool
+create_pipe (PHANDLE r, PHANDLE w, LPSECURITY_ATTRIBUTES sa, DWORD psize)
+{
+  HANDLE npfsh;
+  NTSTATUS status;
+  IO_STATUS_BLOCK io;
+  OBJECT_ATTRIBUTES attr;
+  UNICODE_STRING pipename;
+  WCHAR pipename_buf[MAX_PATH];
+  LARGE_INTEGER timeout;
+
+  *r = NULL;
+  *w = NULL;
+
+  status = fhandler_base::npfs_handle (npfsh);
+  if (!NT_SUCCESS (status))
+    {
+      __seterrno_from_nt_status (status);
+      return false;
+    }
+
+  if (!psize)
+    psize = 4096;
+
+  /* Generate unique pipe name.  Use PID + counter for uniqueness.
+     No need for installation_key since this is a transient pipe. */
+  static volatile ULONG pipe_unique_id;
+  LONG id = InterlockedIncrement ((LONG *) &pipe_unique_id);
+  __small_swprintf (pipename_buf, L"cygfork-%u-%p",
+		    GetCurrentProcessId (), id);
+  RtlInitUnicodeString (&pipename, pipename_buf);
+
+  ULONG obj_flags = 0;
+  if (sa && sa->bInheritHandle)
+    obj_flags = OBJ_INHERIT;
+  InitializeObjectAttributes (&attr, &pipename, obj_flags, npfsh,
+			      sa ? sa->lpSecurityDescriptor : NULL);
+
+  timeout.QuadPart = -500000;
+  ACCESS_MASK raccess = GENERIC_READ | FILE_WRITE_ATTRIBUTES | SYNCHRONIZE;
+  status = NtCreateNamedPipeFile (r, raccess, &attr, &io,
+				  FILE_SHARE_READ | FILE_SHARE_WRITE,
+				  FILE_CREATE,
+				  FILE_SYNCHRONOUS_IO_NONALERT,
+				  FILE_PIPE_BYTE_STREAM_TYPE,
+				  FILE_PIPE_BYTE_STREAM_MODE,
+				  0, 1, psize, psize, &timeout);
+  if (!NT_SUCCESS (status))
+    {
+      __seterrno_from_nt_status (status);
+      return false;
+    }
+
+  ACCESS_MASK waccess = GENERIC_WRITE | FILE_READ_ATTRIBUTES | SYNCHRONIZE;
+  status = NtOpenFile (w, waccess, &attr, &io, 0, 0);
+  if (!NT_SUCCESS (status))
+    {
+      NtClose (*r);
+      *r = NULL;
+      __seterrno_from_nt_status (status);
+      return false;
+    }
+
+  return true;
+}
+
 /* Minimal overlapped pipe I/O implementation for signal and commune stuff. */
 
 BOOL
