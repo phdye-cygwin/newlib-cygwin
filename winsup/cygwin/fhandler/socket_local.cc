@@ -44,7 +44,28 @@
 
 extern "C" {
   int sscanf (const char *, const char *, ...);
+  pid_t cygwin_winpid_to_pid (int);
 } /* End of "C" section */
+
+#include "security.h"
+
+/* TCP table types for GetExtendedTcpTable peer PID lookup */
+#ifndef TCP_TABLE_OWNER_PID_CONNECTIONS
+#define TCP_TABLE_OWNER_PID_CONNECTIONS 4
+typedef struct {
+  DWORD dwState;
+  DWORD dwLocalAddr;
+  DWORD dwLocalPort;
+  DWORD dwRemoteAddr;
+  DWORD dwRemotePort;
+  DWORD dwOwningPid;
+} MIB_TCPROW_OWNER_PID;
+typedef struct {
+  DWORD dwNumEntries;
+  MIB_TCPROW_OWNER_PID table[1];
+} MIB_TCPTABLE_OWNER_PID;
+#define MIB_TCP_STATE_ESTAB 5
+#endif
 
 #define ASYNC_MASK (FD_READ|FD_WRITE|FD_OOB|FD_ACCEPT|FD_CONNECT)
 #define EVENT_MASK (FD_READ|FD_WRITE|FD_OOB|FD_ACCEPT|FD_CONNECT|FD_CLOSE)
@@ -551,6 +572,148 @@ fhandler_socket_local::af_local_connect ()
   return 0;
 }
 
+bool
+fhandler_socket_local::af_local_lookup_peer_cred ()
+{
+  struct sockaddr_in local_addr, remote_addr;
+  int addr_len;
+
+  /* Get the underlying TCP endpoints for this AF_UNIX socket */
+  addr_len = sizeof (local_addr);
+  if (::getsockname (get_socket (), (struct sockaddr *) &local_addr, &addr_len)
+      != 0)
+    {
+      debug_printf ("getsockname failed, %u", WSAGetLastError ());
+      return false;
+    }
+  addr_len = sizeof (remote_addr);
+  if (::getpeername (get_socket (), (struct sockaddr *) &remote_addr, &addr_len)
+      != 0)
+    {
+      debug_printf ("getpeername failed, %u", WSAGetLastError ());
+      return false;
+    }
+
+  /* Query the TCP table with owning PID info */
+  DWORD size = 0;
+  DWORD ret;
+  char *buf = NULL;
+
+  do
+    {
+      ret = GetExtendedTcpTable (buf, &size, FALSE, AF_INET,
+				 TCP_TABLE_OWNER_PID_CONNECTIONS, 0);
+      if (ret == ERROR_INSUFFICIENT_BUFFER)
+	{
+	  char *newbuf = (char *) realloc (buf, size);
+	  if (!newbuf)
+	    {
+	      free (buf);
+	      debug_printf ("realloc failed for TCP table, size %lu", size);
+	      return false;
+	    }
+	  buf = newbuf;
+	}
+    }
+  while (ret == ERROR_INSUFFICIENT_BUFFER);
+
+  if (ret != NO_ERROR)
+    {
+      free (buf);
+      debug_printf ("GetExtendedTcpTable failed, %lu", ret);
+      return false;
+    }
+
+  MIB_TCPTABLE_OWNER_PID *tcp_table = (MIB_TCPTABLE_OWNER_PID *) buf;
+  DWORD peer_pid = 0;
+  bool found = false;
+
+  /* Find the row matching the remote endpoint.  The remote side's local
+     address/port corresponds to our peer address/port. */
+  for (DWORD i = 0; i < tcp_table->dwNumEntries; i++)
+    {
+      MIB_TCPROW_OWNER_PID *row = &tcp_table->table[i];
+      if (row->dwState == MIB_TCP_STATE_ESTAB
+	  && row->dwLocalAddr == remote_addr.sin_addr.s_addr
+	  && (WORD) row->dwLocalPort == remote_addr.sin_port
+	  && row->dwRemoteAddr == local_addr.sin_addr.s_addr
+	  && (WORD) row->dwRemotePort == local_addr.sin_port)
+	{
+	  peer_pid = row->dwOwningPid;
+	  found = true;
+	  break;
+	}
+    }
+  free (buf);
+
+  if (!found)
+    {
+      debug_printf ("no matching TCP table entry for peer");
+      return false;
+    }
+
+  debug_printf ("peer Windows PID = %lu", peer_pid);
+
+  /* Open the peer process and query its token for user/group SIDs */
+  HANDLE hProc = OpenProcess (PROCESS_QUERY_LIMITED_INFORMATION, FALSE,
+			      peer_pid);
+  if (!hProc)
+    {
+      debug_printf ("OpenProcess(%lu) failed, %E", peer_pid);
+      return false;
+    }
+
+  HANDLE hToken;
+  NTSTATUS status = NtOpenProcessToken (hProc, TOKEN_QUERY, &hToken);
+  if (!NT_SUCCESS (status))
+    {
+      debug_printf ("NtOpenProcessToken failed, %y", status);
+      CloseHandle (hProc);
+      return false;
+    }
+
+  /* Query TokenUser for user SID */
+  cygsid user_sid (NO_SID);
+  ULONG retlen;
+  status = NtQueryInformationToken (hToken, TokenUser, &user_sid,
+				    sizeof (cygsid), &retlen);
+  if (!NT_SUCCESS (status))
+    {
+      debug_printf ("NtQueryInformationToken(TokenUser) failed, %y", status);
+      NtClose (hToken);
+      CloseHandle (hProc);
+      return false;
+    }
+
+  /* Query TokenPrimaryGroup for group SID */
+  cygsid group_sid (NO_SID);
+  status = NtQueryInformationToken (hToken, TokenPrimaryGroup, &group_sid,
+				    sizeof (cygsid), &retlen);
+  if (!NT_SUCCESS (status))
+    {
+      debug_printf ("NtQueryInformationToken(TokenPrimaryGroup) failed, %y",
+		    status);
+      NtClose (hToken);
+      CloseHandle (hProc);
+      return false;
+    }
+
+  NtClose (hToken);
+  CloseHandle (hProc);
+
+  /* Convert SIDs to Cygwin uid/gid */
+  sec_peer_uid = user_sid.get_uid (NULL);
+  sec_peer_gid = group_sid.get_gid (NULL);
+
+  /* Convert Windows PID to Cygwin PID (fallback to raw PID) */
+  pid_t cpid = cygwin_winpid_to_pid ((int) peer_pid);
+  sec_peer_pid = (cpid > 0) ? cpid : (pid_t) peer_pid;
+
+  debug_printf ("OS lookup: pid=%d uid=%d gid=%d",
+		sec_peer_pid, sec_peer_uid, sec_peer_gid);
+  return true;
+}
+
 int
 fhandler_socket_local::af_local_accept ()
 {
@@ -561,15 +724,52 @@ fhandler_socket_local::af_local_accept ()
     return 0;
 
   af_local_setblocking (orig_async_io, orig_is_nonblocking);
-  if (!af_local_recv_secret () || !af_local_send_secret ()
-      || !af_local_recv_cred () || !af_local_send_cred ())
+
+  /* Probe for handshake data with a 100ms timeout.  If the peer is a
+     native Cygwin client it will send the secret immediately.  If not
+     (e.g. Python, Go, or any non-Cygwin client) the recv will time out
+     and we fall back to OS-level credential lookup. */
+  DWORD probe_timeout = 100; /* milliseconds */
+  DWORD orig_timeout = 0;
+  int orig_optlen = sizeof (orig_timeout);
+  ::getsockopt (get_socket (), SOL_SOCKET, SO_RCVTIMEO,
+		(char *) &orig_timeout, &orig_optlen);
+  ::setsockopt (get_socket (), SOL_SOCKET, SO_RCVTIMEO,
+		(const char *) &probe_timeout, sizeof (probe_timeout));
+
+  char probe_buf;
+  int n = ::recv (get_socket (), &probe_buf, 1, MSG_PEEK);
+  int probe_err = WSAGetLastError ();
+
+  /* Restore original timeout */
+  ::setsockopt (get_socket (), SOL_SOCKET, SO_RCVTIMEO,
+		(const char *) &orig_timeout, sizeof (orig_timeout));
+
+  if (n > 0)
     {
-      debug_printf ("connect from unauthorized client");
-      ::shutdown (get_socket (), SD_BOTH);
-      ::closesocket (get_socket ());
-      WSASetLastError (WSAECONNABORTED);
-      return -1;
+      /* Data available — peer is doing the Cygwin handshake.
+	 Run the full 4-step secret+credential exchange. */
+      debug_printf ("handshake data detected, running full exchange");
+      if (!af_local_recv_secret () || !af_local_send_secret ()
+	  || !af_local_recv_cred () || !af_local_send_cred ())
+	{
+	  debug_printf ("connect from unauthorized client");
+	  ::shutdown (get_socket (), SD_BOTH);
+	  ::closesocket (get_socket ());
+	  WSASetLastError (WSAECONNABORTED);
+	  return -1;
+	}
     }
+  else
+    {
+      /* Timeout or error — peer didn't send handshake data.
+	 Fall back to OS-level credential lookup. */
+      debug_printf ("no handshake data (n=%d, err=%u), trying OS lookup",
+		    n, probe_err);
+      if (!af_local_lookup_peer_cred ())
+	debug_printf ("OS credential lookup failed, proceeding without creds");
+    }
+
   af_local_unsetblocking (orig_async_io, orig_is_nonblocking);
   return 0;
 }
@@ -1425,7 +1625,7 @@ fhandler_socket_local::getpeereid (pid_t *pid, uid_t *euid, gid_t *egid)
       set_errno (EINVAL);
       return -1;
     }
-  if (no_getpeereid ())
+  if (sec_peer_uid == (uid_t) -1)
     {
       set_errno (ENOTSUP);
       return -1;

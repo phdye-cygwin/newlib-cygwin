@@ -828,6 +828,7 @@ class fhandler_socket_local: public fhandler_socket_wsock
   bool af_local_send_cred ();
   int af_local_accept ();
   int af_local_connect ();
+  bool af_local_lookup_peer_cred ();
   int af_local_set_no_getpeereid ();
   void af_local_set_sockpair_cred ();
 
