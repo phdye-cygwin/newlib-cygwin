@@ -48,24 +48,7 @@ extern "C" {
 } /* End of "C" section */
 
 #include "security.h"
-
-/* TCP table types for GetExtendedTcpTable peer PID lookup */
-#ifndef TCP_TABLE_OWNER_PID_CONNECTIONS
-#define TCP_TABLE_OWNER_PID_CONNECTIONS 4
-typedef struct {
-  DWORD dwState;
-  DWORD dwLocalAddr;
-  DWORD dwLocalPort;
-  DWORD dwRemoteAddr;
-  DWORD dwRemotePort;
-  DWORD dwOwningPid;
-} MIB_TCPROW_OWNER_PID;
-typedef struct {
-  DWORD dwNumEntries;
-  MIB_TCPROW_OWNER_PID table[1];
-} MIB_TCPTABLE_OWNER_PID;
-#define MIB_TCP_STATE_ESTAB 5
-#endif
+#include <w32api/iphlpapi.h>
 
 #define ASYNC_MASK (FD_READ|FD_WRITE|FD_OOB|FD_ACCEPT|FD_CONNECT)
 #define EVENT_MASK (FD_READ|FD_WRITE|FD_OOB|FD_ACCEPT|FD_CONNECT|FD_CLOSE)
@@ -738,7 +721,11 @@ fhandler_socket_local::af_local_accept ()
 		(const char *) &probe_timeout, sizeof (probe_timeout));
 
   char probe_buf;
-  int n = ::recv (get_socket (), &probe_buf, 1, MSG_PEEK);
+  WSABUF wsabuf = { 1, &probe_buf };
+  DWORD wret = 0;
+  DWORD dwFlags = MSG_PEEK;
+  int rc = WSARecv (get_socket (), &wsabuf, 1, &wret, &dwFlags, NULL, NULL);
+  int n = (rc == 0) ? (int) wret : -1;
   int probe_err = WSAGetLastError ();
 
   /* Restore original timeout */
