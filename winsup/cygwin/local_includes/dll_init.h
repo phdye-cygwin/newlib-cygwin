@@ -90,7 +90,6 @@ class dll_list
   PWCHAR forkables_dirx_ntname;
   PWCHAR forkables_mutex_name;
   HANDLE forkables_mutex;
-  void track_self ();
   dll *find_by_forkedntname (PCWCHAR ntname);
   size_t forkable_ntnamesize (dll_type, PCWCHAR fullntname, PCWCHAR modname);
   void prepare_forkables_nomination ();
@@ -126,6 +125,7 @@ public:
     return nt_max_path_buffer;
   }
 
+  void track_self ();
   dll *main_executable;
   dll start;
   int loaded_dlls;
@@ -181,6 +181,7 @@ public:
       protect.release ();
   }
   friend void dll_global_dtors ();
+  friend void dll_reinit_lock_after_clone ();
   dll_list () { protect.init ("dll_list"); }
 };
 

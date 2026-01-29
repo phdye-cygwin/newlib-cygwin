@@ -26,10 +26,15 @@ reinit_all_locks_after_clone ()
      subsequent operations might need to allocate memory.  */
   malloc_reinit_lock_after_clone ();
 
-  /* Reset lock_process muto - used by many subsystems including
-     file descriptor operations.  Must be early since it guards
-     many critical sections. */
+  /* Reset and reinitialize lock_process muto - used by many subsystems
+     including file descriptor operations (dtable::lock via cygheap_fdget).
+     Must be early since it guards many critical sections.
+     CRITICAL: reset_after_clone() only clears name/bruteforce, but does NOT
+     reinitialize the muto.  Must call init() after reset to create a new
+     bruteforce event and set name, otherwise acquire() will fail (bruteforce
+     is NULL → WaitForSingleObject(NULL) → WAIT_FAILED). */
   lock_process::reset_after_clone ();
+  lock_process::init ();
 
   /* Reset shared directory handles - these are inherited from parent via
      COW but the handle values are invalid in the child's handle table.
@@ -38,6 +43,10 @@ reinit_all_locks_after_clone ()
 
   /* Cygheap protection lock - used by many subsystems */
   cygheap_reinit_lock_after_clone ();
+
+  /* tls_sentry muto - guards thread list access.  May have been held
+     by parent's wait_sig thread at clone time, causing deadlock. */
+  tls_sentry_reinit_lock_after_clone ();
 
   /* Memory mapping lock */
   mmap_reinit_lock_after_clone ();
@@ -74,6 +83,10 @@ reinit_all_locks_after_clone ()
 
   /* POSIX timer lock */
   posix_timer_reinit_lock_after_clone ();
+
+  /* DLL list protect muto - not NO_COPY, but inherited via COW.
+     Must reset before any DLL operations in child. */
+  dll_reinit_lock_after_clone ();
 
   /* Reset stdio FILE locks (stdin, stdout, stderr).
      These use pthread_mutex internally via __cygwin_lock_*.

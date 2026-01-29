@@ -122,6 +122,13 @@ class pending_signals
 public:
   pending_signals (): queue_left (SIGQUEUE_MAX), queue_lock (SRWLOCK_INIT) {}
   void reinit_lock_after_clone () { queue_lock = SRWLOCK_INIT; }
+  void clear_after_clone ()
+  {
+    start.next = NULL;
+    queue_left = SIGQUEUE_MAX;
+    retry = false;
+    memset (sigs, 0, sizeof (sigs));
+  }
   void add (sigpacket&);
   bool pending () {retry = !!start.next; return retry;}
   void clear (int sig, bool need_lock);
@@ -144,6 +151,26 @@ sigproc_reinit_lock_after_clone ()
      That handle is invalid in the child's handle table.  Reset it so
      sigproc_init() will create a fresh event. */
   sync_proc_subproc.reset_after_clone ();
+}
+
+/* Re-set myself->sendsig after myself.init() in RtlClone child.
+   sigproc_init() sets myself->sendsig = my_sendsig, but at that point
+   'myself' still refers to the parent's COW pinfo.  After myself.init()
+   switches to the child's own pinfo, we need to copy sendsig over. */
+void
+sigproc_set_sendsig_on_pinfo ()
+{
+  myself->sendsig = my_sendsig;
+}
+
+/* Clear inherited pending signal queue in RtlClone child.
+   POSIX: "The set of signals pending for the child process shall be
+   initialized to the empty set."  After RtlCloneUserProcess, the child
+   has a COW copy of the parent's sigq with stale sigtls pointers.  */
+void
+sigq_clear_after_clone ()
+{
+  sigq.clear_after_clone ();
 }
 
 /* Functions */

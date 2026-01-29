@@ -225,6 +225,20 @@ cygthread::init ()
   main_thread_id = GetCurrentThreadId ();
 }
 
+/* Reset NO_COPY cygthread state in RtlClone child.
+   The threads[] array is NO_COPY, so in an rtlclone child it contains
+   stale COW copies of the parent's cygthread entries.  If any entry has
+   h != NULL (e.g., from a previous fork's wait_sig thread), create()
+   takes the "reuse existing thread" path and hangs waiting on a stale
+   thread_sync handle.  Zero the entire array so all slots start fresh. */
+void
+cygthread::reinit_after_clone ()
+{
+  memset ((void *) threads, 0, sizeof (threads));
+  main_thread_id = GetCurrentThreadId ();
+  exiting = false;
+}
+
 cygthread *
 cygthread::freerange ()
 {

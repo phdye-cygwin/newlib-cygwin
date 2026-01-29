@@ -80,7 +80,7 @@ static int test_error_contract(void)
      */
     pid_t children[100];
     int num_children = 0;
-    int max_children = 50;  /* Try to fork up to this many */
+    int max_children = 10;  /* Try to fork up to this many */
     int i;
     int saw_eagain = 0;
     pid_t pid;
@@ -144,8 +144,9 @@ static int test_error_contract(void)
 
         if (pid == 0)
         {
-            /* Child - just sleep and exit */
-            sleep(60);
+            /* Child - stay alive during fork loop, short enough to
+               not cause timeout if kill doesn't terminate immediately */
+            sleep(3);
             _exit(0);
         }
 

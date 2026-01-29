@@ -1653,10 +1653,6 @@ fhandler_base::fork_fixup (HANDLE parent, HANDLE &h, const char *name)
 {
   HANDLE oh = h;
   bool res = false;
-  /* For RtlCloneUserProcess child, we must duplicate ALL handles from the
-     parent because handle inheritance via RTL_CLONE_PROCESS_FLAGS_INHERIT_HANDLES
-     doesn't work reliably for all handle types.  For legacy CreateProcess fork,
-     handles without close_on_exec are inherited automatically. */
   if (!close_on_exec () && !rtlclone_fixup_in_progress)
     debug_printf ("handle %p already opened", h);
   else if (!DuplicateHandle (parent, h, GetCurrentProcess (), &h,

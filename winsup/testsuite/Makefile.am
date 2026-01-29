@@ -347,6 +347,7 @@ check_PROGRAMS = \
 	winsup.api/fork/fork_fd_inherit \
 	winsup.api/fork/fork_fd_offset \
 	winsup.api/fork/fork_return_values \
+	winsup.api/fork/fork_signal_delivery \
 	winsup.api/fork/fork_thread_replica \
 	winsup.api/samples/sample-fail \
 	winsup.api/samples/sample-pass
@@ -386,10 +387,14 @@ XFAIL_TESTS = \
 	winsup.api/fork/15-1 \
 	winsup.api/fork/19-1 \
 	winsup.api/fork/fork_eagain \
+	winsup.api/fork/1-1 \
+	winsup.api/fork/16-1 \
+	winsup.api/fork/21-1 \
 	winsup.api/samples/sample-fail
 # fork/7-1, 10-1, 14-1, 15-1, 19-1: require elevated privileges (fail under cygdrop)
 # fork/13-1: ITIMER_VIRTUAL not supported on Cygwin
 # fork/fork_eagain: cannot trigger EAGAIN without RLIMIT_NPROC
+# fork/1-1, 16-1, 21-1: require /dev/shm for POSIX semaphores/shared memory
 
 # cygrun.sh test-runner script, and variables used by it:
 LOG_COMPILER = $(srcdir)/cygrun.sh

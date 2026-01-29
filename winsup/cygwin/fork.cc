@@ -812,10 +812,17 @@ static HANDLE rtlclone_wr_proc_pipe;
    it inheritable. */
 static HANDLE rtlclone_parent_handle;
 
-/* Flag indicating RtlClone child is performing handle fixup.
-   When true, fork_fixup should duplicate ALL handles from parent. */
-bool rtlclone_fixup_in_progress;
+/* Event signaled by child when it has finished duplicating handles from
+   parent via fixup_after_fork.  Parent waits on this before returning
+   from fork(), ensuring handles aren't closed before child copies them. */
+static HANDLE rtlclone_fixup_done_evt;
 
+/* Flag indicating that fork_fixup should DuplicateHandle ALL handles from
+   parent, not just close-on-exec ones.  With RtlCloneUserProcess, non-cloexec
+   handles are NOT automatically valid in the child because Windows handle
+   inheritance only copies inheritable handles, and many internal handles
+   (pipe_mtx, select_sem, etc.) are created non-inheritable.  */
+bool rtlclone_fixup_in_progress;
 
 static int
 dofork_rtlclone (void **proc)
@@ -881,6 +888,23 @@ dofork_rtlclone (void **proc)
     }
   rtlclone_parent_handle = parent_handle;
 
+  /* Create an inheritable manual-reset event for child to signal when it
+     has finished handle duplication (fixup_after_fork).  Parent waits on
+     this before returning from fork() to prevent a race where the parent
+     closes handles before the child has had a chance to DuplicateHandle. */
+  SECURITY_ATTRIBUTES sa_inherit = { sizeof (SECURITY_ATTRIBUTES), NULL, TRUE };
+  HANDLE fixup_evt = CreateEvent (&sa_inherit, TRUE, FALSE, NULL);
+  if (!fixup_evt)
+    {
+      __seterrno ();
+      debug_printf ("CreateEvent for fixup_done failed, %E");
+      CloseHandle (rd_proc_pipe);
+      CloseHandle (wr_proc_pipe);
+      CloseHandle (parent_handle);
+      return -1;
+    }
+  rtlclone_fixup_done_evt = fixup_evt;
+
   /* Initialize process_info structure */
   memset (&process_info, 0, sizeof (process_info));
   process_info.Length = sizeof (process_info);
@@ -890,10 +914,6 @@ dofork_rtlclone (void **proc)
   status = RtlCloneUserProcess (RTL_CLONE_PROCESS_FLAGS_CREATE_SUSPENDED
 				| RTL_CLONE_PROCESS_FLAGS_INHERIT_HANDLES,
 				NULL, NULL, NULL, &process_info);
-  {
-    char buf[128];
-    __small_sprintf (buf, "RtlCloneUserProcess returned status=0x%x", status);
-  }
 
   /* Check if function is unavailable (autoload stub returned error).
      This happens on older Windows versions that don't have this function.
@@ -923,6 +943,12 @@ dofork_rtlclone (void **proc)
 	 and those locks are now in an undefined state in the child. */
       reinit_all_locks_after_clone ();
 
+      /* Clear inherited NO_COPY state that is stale in the child.
+	 Must happen before sigproc_init() and any signal handling. */
+      cygthread::reinit_after_clone ();
+      sigq_clear_after_clone ();
+      itimer_fixup_after_rtlclone ();
+
       /* Set up process tracking pipe.  Close any leftover pipe from a previous
 	 fork (shouldn't happen but be safe), then set my_wr_proc_pipe from
 	 the value we stored in rtlclone_wr_proc_pipe before the clone. */
@@ -935,29 +961,37 @@ dofork_rtlclone (void **proc)
 	 goes through dll_crt0_1 and inherits signal setup via child_info,
 	 RtlClone child has COW copies of parent's signal pipes which are
 	 invalid in the child's handle table.  We need fresh signal pipes
-	 and a new wait_sig thread. */
+	 and a new wait_sig thread.
+
+	 IMPORTANT: sigproc_init() sets myself->sendsig internally, but at
+	 this point 'myself' still refers to the parent's pinfo (COW shared
+	 memory).  We must save and restore the parent's sendsig to avoid
+	 corrupting it — otherwise the parent can't receive signals from
+	 other processes after we return.  The child's sendsig will be set
+	 on the child's own pinfo later via sigproc_set_sendsig_on_pinfo(). */
+      HANDLE parent_sendsig = myself->sendsig;
       sigproc_init ();
+      myself->sendsig = parent_sendsig;
+
+      /* sigproc_init() creates the wait_sig thread via QueueUserAPC +
+	 async_create, which defers thread creation until the main thread
+	 enters an alertable wait.  In normal startup, dll_crt0_1 has
+	 alertable waits, but the rtlclone child skips dll_crt0_1.
+	 Flush the APC queue now so wait_sig starts immediately. */
+      SleepEx (0, TRUE);
 
       /* Find our own pinfo.  The parent already created it for us using our
 	 Windows PID.  We need to update 'myself' to point to our own pinfo
 	 instead of the parent's (which we inherited via copy-on-write). */
       DWORD wpid = GetCurrentProcessId ();
-      {
-	char buf[128];
-	__small_sprintf (buf, "child: wpid=%lu, calling cygwin_pid", (unsigned long)wpid);
-      }
       pid_t child_pid = cygwin_pid (wpid);
-      {
-	char buf[128];
-	__small_sprintf (buf, "child: cygwin_pid returned %d", child_pid);
-      }
       if (child_pid)
 	{
 	  cygheap->pid = child_pid;
 	  myself.init (child_pid, PID_IN_USE, NULL);
-	}
-      else
-	{
+	  /* sigproc_init() set myself->sendsig on the parent's COW pinfo.
+	     Now that myself points to the child's own pinfo, re-set it. */
+	  sigproc_set_sendsig_on_pinfo ();
 	}
 
       /* Now we can safely do minimal child initialization */
@@ -979,19 +1013,28 @@ dofork_rtlclone (void **proc)
       if (fixup_shms_after_fork ())
 	api_fatal ("fixup_shms_after_fork failed in RtlCloneUserProcess child");
 
-      /* DLLs are already loaded via COW, just need to fixup bookkeeping.
-	 Unlike legacy fork, we don't need to reload DLLs - they're already
-	 mapped at the same addresses due to copy-on-write. */
-      /* Note: dlls.load_after_fork is not needed here since DLLs are
-	 already in memory. However, we may need to reinitialize DLL-specific
-	 state if any DLLs have fork callbacks. */
+      /* DLLs are already loaded via COW — no need to reload.  But update
+	 DLL tracking (cygwin1.dll + main executable) so the dll_list is
+	 consistent.  load_after_fork() is not needed since all DLLs are
+	 already mapped at the same addresses. */
+      dlls.track_self ();
 
-      /* Fix up file descriptor table.  Use parent_handle (inherited via COW)
-	 to duplicate ALL handles from parent.  Set rtlclone_fixup_in_progress
-	 flag so fork_fixup knows to duplicate regardless of close_on_exec. */
+      /* Fix up file descriptor table.  With RtlCloneUserProcess, handles
+	 that weren't marked inheritable (sec_none_nih) are NOT inherited
+	 even if the fd is non-cloexec.  Internal handles like pipe_mtx
+	 and select_sem are always non-inheritable.  So we must
+	 DuplicateHandle ALL handles from parent, not just cloexec ones. */
       rtlclone_fixup_in_progress = true;
       cygheap->fdtab.fixup_after_fork (rtlclone_parent_handle);
       rtlclone_fixup_in_progress = false;
+      /* Signal parent that handle duplication is complete.  Parent is
+	 waiting on this event before returning from fork(). */
+      if (rtlclone_fixup_done_evt)
+	{
+	  SetEvent (rtlclone_fixup_done_evt);
+	  CloseHandle (rtlclone_fixup_done_evt);
+	  rtlclone_fixup_done_evt = NULL;
+	}
 
       /* Close the parent handle - we're done duplicating handles */
       if (rtlclone_parent_handle)
@@ -1010,8 +1053,12 @@ dofork_rtlclone (void **proc)
       cygwin_finished_initializing = true;
       __in_forkee = FORKED;
 
-      /* Mark process as active */
-      InterlockedOr ((LONG *) &myself->process_state, PID_ACTIVE);
+      /* Mark process as active and in-use.  PID_IN_USE is required by
+	 proc_can_be_signalled() — without it, kill() returns ESRCH even
+	 though the process exists.  In legacy fork, thisproc() sets
+	 PID_IN_USE explicitly.  We must do the same here. */
+      InterlockedOr ((LONG *) &myself->process_state,
+		     PID_ACTIVE | PID_IN_USE);
       InterlockedAnd ((LONG *) &myself->process_state,
 		      ~(PID_INITIALIZING | PID_EXITED | PID_REAPED));
 
@@ -1025,10 +1072,6 @@ dofork_rtlclone (void **proc)
       pinfo child;
       DWORD child_wpid = (DWORD) (uintptr_t) process_info.ClientId.UniqueProcess;
 
-      {
-	char buf[128];
-	__small_sprintf (buf, "parent: child wpid=%lu", (unsigned long)child_wpid);
-      }
       debug_printf ("parent: RtlCloneUserProcess returned SUCCESS, child wpid %lu",
 		    (unsigned long) child_wpid);
 
@@ -1038,14 +1081,9 @@ dofork_rtlclone (void **proc)
       wr_proc_pipe = NULL;
       rtlclone_wr_proc_pipe = NULL;
 
-      /* Close parent_handle - parent doesn't need it anymore.
-	 Child inherited it and will use it for handle duplication. */
-      if (parent_handle)
-	{
-	  CloseHandle (parent_handle);
-	  parent_handle = NULL;
-	}
-      rtlclone_parent_handle = NULL;
+      /* NOTE: Do NOT close parent_handle yet!  The child needs it to
+	 DuplicateHandle during fixup_after_fork.  We close it after
+	 waiting for the child to signal fixup completion. */
 
       /* Create a new Cygwin pid for the child.  Unlike legacy fork where
 	 the child creates its own pid during DLL initialization, with
@@ -1080,7 +1118,8 @@ dofork_rtlclone (void **proc)
       child->sid = myself->sid;
       child->ctty = myself->ctty;
       child->cygstarted = true;
-      InterlockedOr ((LONG *) &child->process_state, PID_INITIALIZING);
+      InterlockedOr ((LONG *) &child->process_state,
+		     PID_IN_USE | PID_INITIALIZING);
       child->ppid = myself->pid;  /* always set last */
 
       /* Set up rd_proc_pipe so proc_waiter can track the child.
@@ -1113,6 +1152,29 @@ dofork_rtlclone (void **proc)
       ResumeThread (process_info.Thread);
       NtClose (process_info.Thread);
 
+      /* Wait for child to complete handle duplication before we return.
+	 This prevents a race where the caller closes handles that the
+	 child hasn't yet duplicated via DuplicateHandle from parent. */
+      if (fixup_evt)
+	{
+	  DWORD wait_rc = WaitForSingleObject (fixup_evt, 30000);
+	  if (wait_rc != WAIT_OBJECT_0)
+	    debug_printf ("warning: wait for child fixup timed out or failed (%lu)",
+			  wait_rc);
+	  CloseHandle (fixup_evt);
+	  fixup_evt = NULL;
+	}
+      rtlclone_fixup_done_evt = NULL;
+
+      /* NOW it's safe to close parent_handle - child has finished
+	 duplicating all the handles it needs. */
+      if (parent_handle)
+	{
+	  CloseHandle (parent_handle);
+	  parent_handle = NULL;
+	}
+      rtlclone_parent_handle = NULL;
+
       /* Return process handle if requested (for posix_spawn) */
       if (proc)
 	*proc = process_info.Process;
@@ -1128,6 +1190,7 @@ dofork_rtlclone (void **proc)
       CloseHandle (rd_proc_pipe);
       CloseHandle (wr_proc_pipe);
       CloseHandle (parent_handle);
+      CloseHandle (fixup_evt);
       __seterrno_from_nt_status (status);
       return -1;
     }
