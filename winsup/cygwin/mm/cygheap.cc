@@ -64,6 +64,20 @@ public:
 };
 
 muto NO_COPY tls_sentry::lock;
+
+/* Reinitialize tls_sentry lock after RtlCloneUserProcess.
+   The muto may have been held by a parent thread at clone time,
+   leaving it in a locked state with an invalid bruteforce event.
+   CRITICAL: Must call reset_after_clone() BEFORE init() — otherwise
+   init() sees name!=NULL and spins forever waiting for bruteforce
+   (which is the parent's invalid handle). */
+void
+tls_sentry_reinit_lock_after_clone ()
+{
+  tls_sentry::lock.reset_after_clone ();
+  tls_sentry::lock.init ("thread_tls_sentry");
+}
+
 static NO_COPY uint32_t nthreads;
 
 #define THREADLIST_CHUNK 256

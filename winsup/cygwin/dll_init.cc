@@ -35,6 +35,15 @@ WCHAR NO_COPY dll_list::nt_max_path_buffer[NT_MAX_PATH];
 
 muto dll_list::protect;
 
+/* Reinitialize dll_list::protect muto after RtlCloneUserProcess.
+   Called from reinit_all_locks_after_clone(). */
+void
+dll_reinit_lock_after_clone ()
+{
+  dll_list::protect.reset_after_clone ();
+  dll_list::protect.init ("dll_list");
+}
+
 static bool dll_global_dtors_recorded;
 
 /* We need the in_load_after_fork flag so dll_dllcrt0_1 can decide at fork

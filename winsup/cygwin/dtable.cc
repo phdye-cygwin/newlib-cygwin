@@ -926,10 +926,6 @@ dtable::fixup_after_fork (HANDLE parent)
   for (size_t i = 0; i < size; i++)
     if ((fh = fds[i]) != NULL)
       {
-	/* For RtlCloneUserProcess child, we need to call fixup_after_fork
-	   for ALL fhandlers because handles may not have been inherited
-	   properly.  For legacy fork, only handles with close_on_exec or
-	   need_fork_fixup require duplication from parent. */
 	if (fh->close_on_exec () || fh->need_fork_fixup ()
 	    || rtlclone_fixup_in_progress)
 	  {

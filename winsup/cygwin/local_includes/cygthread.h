@@ -65,6 +65,7 @@ class cygthread
   }
   cygthread () {};
   static void init ();
+  static void reinit_after_clone ();
   bool detach (HANDLE = NULL);
   operator HANDLE ();
   void * operator new (size_t);

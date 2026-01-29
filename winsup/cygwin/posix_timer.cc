@@ -28,6 +28,16 @@ posix_timer_reinit_lock_after_clone ()
   itimer_tracker.reinit_lock_after_clone ();
 }
 
+/* Reset itimer_tracker in RtlClone child.
+   itimer_tracker is NO_COPY — after RtlCloneUserProcess, the child has the
+   parent's stale timer/cancel_evt/sync_thr handles which are invalid in the
+   child's handle table.  Reinitialize to a clean default state. */
+void
+itimer_fixup_after_rtlclone ()
+{
+  new (&itimer_tracker) timer_tracker (CLOCK_REALTIME, NULL);
+}
+
 bool
 timer_tracker::cancel ()
 {
@@ -53,6 +63,7 @@ timer_tracker::timer_tracker (clockid_t c, const sigevent *e)
   overrun_count (OVR_DISARMED)
 {
   srwlock = SRWLOCK_INIT;
+  memset (&time_spec, 0, sizeof (time_spec));
   if (e != NULL)
     evp = *e;
   else
