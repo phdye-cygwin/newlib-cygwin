@@ -90,7 +90,7 @@ static void op_flockfile(void)
 
 static void op_fcntl_lock(void)
 {
-    int fd = open("/tmp/fork_lock_test.tmp", O_CREAT | O_RDWR, 0644);
+    int fd = open("fork_lock_test.tmp", O_CREAT | O_RDWR, 0644);
     if (fd < 0)
         _exit(2);
     struct flock fl = {
@@ -105,7 +105,7 @@ static void op_fcntl_lock(void)
     fl.l_type = F_UNLCK;
     fcntl(fd, F_SETLK, &fl);
     close(fd);
-    unlink("/tmp/fork_lock_test.tmp");
+    unlink("fork_lock_test.tmp");
 }
 
 static void op_malloc_free(void)

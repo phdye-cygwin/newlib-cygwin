@@ -193,7 +193,7 @@ static void op_cwd(void)
     if (!getcwd(buf, sizeof(buf)))
         _exit(1);
     /* Exercise chdir+getcwd round trip */
-    if (chdir("/tmp") < 0)
+    if (chdir("/") < 0)
         _exit(2);
     if (!getcwd(buf, sizeof(buf)))
         _exit(3);

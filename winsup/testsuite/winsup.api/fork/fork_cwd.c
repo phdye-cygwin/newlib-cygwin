@@ -24,7 +24,7 @@
 #include "testfrmw.h"
 #include "testfrmw.c"
 
-#define TMPDIR_TEMPLATE "/tmp/fork_cwd_XXXXXX"
+#define TMPDIR_TEMPLATE "fork_cwd_XXXXXX"
 
 int main(void)
 {
@@ -72,7 +72,7 @@ int main(void)
         if (write(pipefd[1], child_cwd, len) != (ssize_t)len)
             _exit(3);
         /* Change directory in child to prove isolation */
-        chdir("/tmp");
+        chdir("/");
         close(pipefd[1]);
         _exit(0);
     }
@@ -110,8 +110,8 @@ int main(void)
     }
     output("PASS: parent CWD unchanged after child chdir\n");
 
-    /* Cleanup */
-    chdir("/tmp");
+    /* Cleanup — chdir back to original parent before rmdir */
+    chdir("..");
     rmdir(tmpdir);
 
     output("\n=== All CWD tests PASSED ===\n");

@@ -1,11 +1,15 @@
 /*
  * Cygwin fork() test - Fork + Exec Sequence
  *
- * Verifies that fork followed by exec works correctly:
- * - Child exec's /bin/true (exit 0)
- * - Child exec's /bin/false (exit 1)
- * - Child exec's /bin/sh with a command
- * - Parent waitpid gets correct status
+ * Verifies that fork followed by exec works correctly.
+ * Uses self-exec pattern (argv[0] --child <exit_code>) to avoid
+ * dependency on /bin/* paths which may not be available under cygrun.
+ *
+ * Tests:
+ * - Child exec's self with exit 0
+ * - Child exec's self with exit 1
+ * - Child exec's self with exit 42
+ * - Child exec's self and inherits environment
  */
 
 #define _GNU_SOURCE
@@ -25,8 +29,23 @@
 #define POLL_INTERVAL_US 50000
 #define MAX_POLLS 200  /* 200 * 50ms = 10 seconds */
 
-static int fork_exec_test(const char *label, const char *prog,
-                          char *const argv[], int expected_exit)
+/* When invoked as --child <code>, just exit with that code */
+static void child_mode(int argc, char *argv[])
+{
+    if (argc >= 3 && strcmp(argv[1], "--child") == 0) {
+        int code = atoi(argv[2]);
+        /* If --child env, check that env var is set */
+        if (argc >= 4 && strcmp(argv[3], "env") == 0) {
+            const char *val = getenv("FORK_EXEC_TEST");
+            if (!val || strcmp(val, "hello") != 0)
+                _exit(99);
+        }
+        _exit(code);
+    }
+}
+
+static int fork_exec_test(const char *label, char *const argv[],
+                          int expected_exit)
 {
     pid_t pid, wpid;
     int status;
@@ -38,7 +57,7 @@ static int fork_exec_test(const char *label, const char *prog,
     }
 
     if (pid == 0) {
-        execvp(prog, argv);
+        execv(argv[0], argv);
         /* exec failed */
         _exit(127);
     }
@@ -68,45 +87,50 @@ static int fork_exec_test(const char *label, const char *prog,
     return -1;
 }
 
-int main(void)
+int main(int argc, char *argv[])
 {
     int failures = 0;
 
+    /* Check for child mode first */
+    child_mode(argc, argv);
+
     output_init();
-    output("Testing fork + exec sequence\n\n");
+    output("Testing fork + exec sequence (self-exec pattern)\n\n");
 
     alarm(45);
 
-    /* Test 1: exec /bin/true → exit 0 */
-    output("Test 1: fork + exec /bin/true\n");
+    /* Test 1: fork + exec self → exit 0 */
+    output("Test 1: fork + exec self --child 0\n");
     {
-        char *argv[] = { "true", NULL };
-        if (fork_exec_test("true", "/bin/true", argv, 0) != 0)
+        char *child_argv[] = { argv[0], "--child", "0", NULL };
+        if (fork_exec_test("exit-0", child_argv, 0) != 0)
             failures++;
     }
 
-    /* Test 2: exec /bin/false → exit 1 */
-    output("\nTest 2: fork + exec /bin/false\n");
+    /* Test 2: fork + exec self → exit 1 */
+    output("\nTest 2: fork + exec self --child 1\n");
     {
-        char *argv[] = { "false", NULL };
-        if (fork_exec_test("false", "/bin/false", argv, 1) != 0)
+        char *child_argv[] = { argv[0], "--child", "1", NULL };
+        if (fork_exec_test("exit-1", child_argv, 1) != 0)
             failures++;
     }
 
-    /* Test 3: exec /bin/sh -c 'exit 42' */
-    output("\nTest 3: fork + exec /bin/sh -c 'exit 42'\n");
+    /* Test 3: fork + exec self → exit 42 */
+    output("\nTest 3: fork + exec self --child 42\n");
     {
-        char *argv[] = { "sh", "-c", "exit 42", NULL };
-        if (fork_exec_test("sh-exit42", "/bin/sh", argv, 42) != 0)
+        char *child_argv[] = { argv[0], "--child", "42", NULL };
+        if (fork_exec_test("exit-42", child_argv, 42) != 0)
             failures++;
     }
 
-    /* Test 4: exec /bin/sh -c with actual command */
-    output("\nTest 4: fork + exec /bin/sh -c 'echo hello >/dev/null'\n");
+    /* Test 4: fork + exec self with environment inheritance */
+    output("\nTest 4: fork + exec self with env check\n");
     {
-        char *argv[] = { "sh", "-c", "echo hello >/dev/null", NULL };
-        if (fork_exec_test("sh-echo", "/bin/sh", argv, 0) != 0)
+        setenv("FORK_EXEC_TEST", "hello", 1);
+        char *child_argv[] = { argv[0], "--child", "0", "env", NULL };
+        if (fork_exec_test("env-inherit", child_argv, 0) != 0)
             failures++;
+        unsetenv("FORK_EXEC_TEST");
     }
 
     if (failures > 0) {

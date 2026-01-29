@@ -32,7 +32,7 @@
 #define NO_O_CLOEXEC_SUPPORT 1
 #endif
 
-#define TEST_FILE "/tmp/fork_fd_test.tmp"
+#define TEST_FILE "fork_fd_test.tmp"
 #define TEST_DATA "Hello from parent"
 #define CHILD_DATA "Hello from child"
 

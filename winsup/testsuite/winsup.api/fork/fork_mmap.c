@@ -29,7 +29,7 @@
 #define PAGE_SIZE 4096
 #define MAGIC_PARENT 0xDEADBEEF
 #define MAGIC_CHILD  0xCAFEBABE
-#define TEST_FILE "/tmp/fork_mmap_test.tmp"
+#define TEST_FILE "fork_mmap_test.tmp"
 
 int main(void)
 {
