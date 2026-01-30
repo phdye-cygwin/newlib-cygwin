@@ -86,6 +86,7 @@ winsym_t allow_winsymlinks = WSYM_default;
 fork_mode_t fork_mode = FORK_legacy;
 bool disable_pcon;
 bool winjitdebug = false;
+DWORD af_unix_handshake_timeout_ms;
 
 /* Taken from BSD libc:
    This variable is zero until a process has created a pthread.  It is used

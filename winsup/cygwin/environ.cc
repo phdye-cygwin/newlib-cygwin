@@ -105,6 +105,18 @@ set_fork_mode (const char *buf)
     fork_mode = FORK_auto;
 }
 
+static void
+set_af_unix_handshake_timeout (const char *buf)
+{
+  /* buf == NULL when "noaf_unix_handshake_timeout" is used (disabled).
+     buf == "100" when "af_unix_handshake_timeout" is used (from known[].values[1]).
+     buf == "<N>" when "af_unix_handshake_timeout:<N>" is used. */
+  if (!buf)
+    af_unix_handshake_timeout_ms = 0;
+  else
+    af_unix_handshake_timeout_ms = strtoul (buf, NULL, 0);
+}
+
 /* The structure below is used to set up an array which is used to
    parse the CYGWIN environment variable or, if enabled, options from
    the registry.  */
@@ -128,6 +140,7 @@ static struct parse_thing
       } values[2];
   } known[] NO_COPY =
 {
+  {"af_unix_handshake_timeout", {func: set_af_unix_handshake_timeout}, isfunc, NULL, {{0}, {s: "100"}}},
   {"disable_pcon", {&disable_pcon}, setbool, NULL, {{false}, {true}}},
   {"error_start", {func: error_start_init}, isfunc, NULL, {{0}, {0}}},
   {"export", {&export_settings}, setbool, NULL, {{false}, {true}}},

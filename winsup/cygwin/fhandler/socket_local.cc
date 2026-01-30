@@ -50,6 +50,8 @@ extern "C" {
 #include "security.h"
 #include <w32api/iphlpapi.h>
 
+extern DWORD af_unix_handshake_timeout_ms;
+
 #define ASYNC_MASK (FD_READ|FD_WRITE|FD_OOB|FD_ACCEPT|FD_CONNECT)
 #define EVENT_MASK (FD_READ|FD_WRITE|FD_OOB|FD_ACCEPT|FD_CONNECT|FD_CLOSE)
 
@@ -702,41 +704,20 @@ fhandler_socket_local::af_local_accept ()
 {
   bool orig_async_io, orig_is_nonblocking;
 
-  debug_printf ("af_local_accept called, no_getpeereid=%d", no_getpeereid ());
+  debug_printf ("af_local_accept called, no_getpeereid=%d, "
+		"handshake_timeout=%lu", no_getpeereid (),
+		af_unix_handshake_timeout_ms);
   if (no_getpeereid ())
     return 0;
 
   af_local_setblocking (orig_async_io, orig_is_nonblocking);
 
-  /* Probe for handshake data with a 100ms timeout.  If the peer is a
-     native Cygwin client it will send the secret immediately.  If not
-     (e.g. Python, Go, or any non-Cygwin client) the recv will time out
-     and we fall back to OS-level credential lookup. */
-  DWORD probe_timeout = 100; /* milliseconds */
-  DWORD orig_timeout = 0;
-  int orig_optlen = sizeof (orig_timeout);
-  ::getsockopt (get_socket (), SOL_SOCKET, SO_RCVTIMEO,
-		(char *) &orig_timeout, &orig_optlen);
-  ::setsockopt (get_socket (), SOL_SOCKET, SO_RCVTIMEO,
-		(const char *) &probe_timeout, sizeof (probe_timeout));
-
-  char probe_buf;
-  WSABUF wsabuf = { 1, &probe_buf };
-  DWORD wret = 0;
-  DWORD dwFlags = MSG_PEEK;
-  int rc = WSARecv (get_socket (), &wsabuf, 1, &wret, &dwFlags, NULL, NULL);
-  int n = (rc == 0) ? (int) wret : -1;
-  int probe_err = WSAGetLastError ();
-
-  /* Restore original timeout */
-  ::setsockopt (get_socket (), SOL_SOCKET, SO_RCVTIMEO,
-		(const char *) &orig_timeout, sizeof (orig_timeout));
-
-  if (n > 0)
+  if (af_unix_handshake_timeout_ms == 0)
     {
-      /* Data available — peer is doing the Cygwin handshake.
-	 Run the full 4-step secret+credential exchange. */
-      debug_printf ("handshake data detected, running full exchange");
+      /* Legacy path: blocking handshake, no tolerance for non-Cygwin
+	 clients.  This is the default when CYGWIN=af_unix_handshake_timeout
+	 is not set. */
+      debug_printf ("legacy blocking handshake");
       if (!af_local_recv_secret () || !af_local_send_secret ()
 	  || !af_local_recv_cred () || !af_local_send_cred ())
 	{
@@ -744,17 +725,74 @@ fhandler_socket_local::af_local_accept ()
 	  ::shutdown (get_socket (), SD_BOTH);
 	  ::closesocket (get_socket ());
 	  WSASetLastError (WSAECONNABORTED);
+	  af_local_unsetblocking (orig_async_io, orig_is_nonblocking);
 	  return -1;
 	}
     }
-  else
+  else if (af_unix_handshake_timeout_ms == (DWORD) -1)
     {
-      /* Timeout or error — peer didn't send handshake data.
-	 Fall back to OS-level credential lookup. */
-      debug_printf ("no handshake data (n=%d, err=%u), trying OS lookup",
-		    n, probe_err);
+      /* Skip probe entirely, always use OS credential lookup.
+	 Set via CYGWIN=af_unix_handshake_timeout:-1 */
+      debug_printf ("skipping probe, direct OS credential lookup");
       if (!af_local_lookup_peer_cred ())
 	debug_printf ("OS credential lookup failed, proceeding without creds");
+    }
+  else
+    {
+      /* Probe for handshake data with a configurable timeout.  If the
+	 peer is a native Cygwin client it will send the secret
+	 immediately.  If not (e.g. Python, Go, or any non-Cygwin
+	 client) the recv will time out and we fall back to OS-level
+	 credential lookup. */
+      DWORD probe_timeout = af_unix_handshake_timeout_ms;
+      debug_printf ("probing with %lu ms timeout", probe_timeout);
+
+      DWORD orig_timeout = 0;
+      int orig_optlen = sizeof (orig_timeout);
+      ::getsockopt (get_socket (), SOL_SOCKET, SO_RCVTIMEO,
+		    (char *) &orig_timeout, &orig_optlen);
+      ::setsockopt (get_socket (), SOL_SOCKET, SO_RCVTIMEO,
+		    (const char *) &probe_timeout, sizeof (probe_timeout));
+
+      char probe_buf;
+      WSABUF wsabuf = { 1, &probe_buf };
+      DWORD wret = 0;
+      DWORD dwFlags = MSG_PEEK;
+      int rc = WSARecv (get_socket (), &wsabuf, 1, &wret, &dwFlags,
+			NULL, NULL);
+      int n = (rc == 0) ? (int) wret : -1;
+      int probe_err = WSAGetLastError ();
+
+      /* Restore original timeout */
+      ::setsockopt (get_socket (), SOL_SOCKET, SO_RCVTIMEO,
+		    (const char *) &orig_timeout, sizeof (orig_timeout));
+
+      if (n > 0)
+	{
+	  /* Data available -- peer is doing the Cygwin handshake.
+	     Run the full 4-step secret+credential exchange. */
+	  debug_printf ("handshake data detected, running full exchange");
+	  if (!af_local_recv_secret () || !af_local_send_secret ()
+	      || !af_local_recv_cred () || !af_local_send_cred ())
+	    {
+	      debug_printf ("connect from unauthorized client");
+	      ::shutdown (get_socket (), SD_BOTH);
+	      ::closesocket (get_socket ());
+	      WSASetLastError (WSAECONNABORTED);
+	      af_local_unsetblocking (orig_async_io, orig_is_nonblocking);
+	      return -1;
+	    }
+	}
+      else
+	{
+	  /* Timeout or error -- peer didn't send handshake data.
+	     Fall back to OS-level credential lookup. */
+	  debug_printf ("no handshake data (n=%d, err=%u), trying OS lookup",
+			n, probe_err);
+	  if (!af_local_lookup_peer_cred ())
+	    debug_printf ("OS credential lookup failed, "
+			  "proceeding without creds");
+	}
     }
 
   af_local_unsetblocking (orig_async_io, orig_is_nonblocking);
