@@ -23,11 +23,34 @@
 #include <sys/un.h>
 #include <sys/wait.h>
 
+#ifdef __CYGWIN__
+#include <sys/param.h>  /* getpeereid on Cygwin */
+#endif
+
 #include "testfrmw.h"
 #include "testfrmw.c"
 
 #define POLL_US   50000
 #define POLL_MAX  200
+
+/* Portable peer credential check */
+static int
+check_peer_creds (int fd, uid_t *uid, gid_t *gid)
+{
+#ifdef __CYGWIN__
+  return getpeereid (fd, uid, gid);
+#else
+  struct ucred cred;
+  socklen_t len = sizeof (cred);
+  int rc = getsockopt (fd, SOL_SOCKET, SO_PEERCRED, &cred, &len);
+  if (rc == 0)
+    {
+      *uid = cred.uid;
+      *gid = cred.gid;
+    }
+  return rc;
+#endif
+}
 
 static void
 make_path (char *buf, size_t len, const char *tag)
@@ -123,13 +146,15 @@ test_full_lifecycle (void)
       if (send (cs, msg, strlen (msg), 0) != (ssize_t) strlen (msg))
 	_exit (3);
 
-      /* Receive reply */
+      /* Receive reply (exact length to avoid coalesced reads) */
       char buf[32];
-      int n = recv (cs, buf, sizeof (buf) - 1, 0);
-      if (n <= 0)
+      const char *expect = "server-reply";
+      int expect_len = strlen (expect);
+      int n = recv (cs, buf, expect_len, MSG_WAITALL);
+      if (n != expect_len)
 	_exit (4);
       buf[n] = '\0';
-      if (strcmp (buf, "server-reply") != 0)
+      if (strcmp (buf, expect) != 0)
 	_exit (5);
 
       /* Wait for done signal */
@@ -181,10 +206,10 @@ test_full_lifecycle (void)
   /* Verify credentials */
   uid_t peer_uid;
   gid_t peer_gid;
-  int rc = getpeereid (c, &peer_uid, &peer_gid);
+  int rc = check_peer_creds (c, &peer_uid, &peer_gid);
   if (rc != 0)
     {
-      output ("  getpeereid: %s\n", strerror (errno));
+      output ("  check_peer_creds: %s\n", strerror (errno));
       write (c, "D", 1);
       close (c);
       unlink (path);
@@ -309,10 +334,10 @@ test_concurrent_clients (void)
 
       uid_t peer_uid;
       gid_t peer_gid;
-      int rc = getpeereid (c, &peer_uid, &peer_gid);
+      int rc = check_peer_creds (c, &peer_uid, &peer_gid);
       if (rc != 0)
 	{
-	  output ("  getpeereid[%d]: %s\n", i, strerror (errno));
+	  output ("  check_peer_creds[%d]: %s\n", i, strerror (errno));
 	  fail++;
 	}
       else if (peer_uid != geteuid () || peer_gid != getegid ())

@@ -362,24 +362,26 @@ test_getpeereid_non_unix (void)
       return -1;
     }
 #else
-  /* Linux: getpeereid doesn't exist; use getsockopt(SO_PEERCRED) */
+  /* Linux: SO_PEERCRED succeeds on any socket type (returns zeroed ucred
+     for unconnected sockets).  Just verify it doesn't crash and returns
+     reasonable data.  This is documented Linux behavior. */
   struct ucred cred;
   socklen_t len = sizeof (cred);
   int rc = getsockopt (s, SOL_SOCKET, SO_PEERCRED, &cred, &len);
-  int saved_errno = errno;
   close (s);
 
-  if (rc == 0)
+  if (rc != 0)
     {
-      output ("  SO_PEERCRED on AF_INET socket succeeded\n");
+      output ("  SO_PEERCRED on AF_INET socket failed: %s\n",
+	      strerror (errno));
       return -1;
     }
-  /* Expected: ENOTSUP, ENOPROTOOPT, or ENOTSOCK */
-  if (saved_errno != ENOTSUP && saved_errno != ENOPROTOOPT
-      && saved_errno != ENOTSOCK && saved_errno != EINVAL)
+  /* On Linux, unconnected AF_INET returns pid=0 */
+  output ("  SO_PEERCRED on AF_INET: pid=%d uid=%d gid=%d (expected pid=0)\n",
+	  cred.pid, cred.uid, cred.gid);
+  if (cred.pid != 0)
     {
-      output ("  errno=%d (%s), expected ENOTSUP/ENOPROTOOPT\n",
-	      saved_errno, strerror (saved_errno));
+      output ("  unexpected pid=%d on unconnected AF_INET socket\n", cred.pid);
       return -1;
     }
 #endif
