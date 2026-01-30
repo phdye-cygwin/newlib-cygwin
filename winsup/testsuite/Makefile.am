@@ -372,6 +372,7 @@ check_PROGRAMS = \
 	winsup.api/fork/af_unix_errors \
 	winsup.api/fork/af_unix_handshake_timeout \
 	winsup.api/fork/af_unix_socket_basic \
+	winsup.api/fork/af_unix_stress \
 	winsup.api/fork/fork_socket_inherit \
 	winsup.api/fork/fork_stress \
 	winsup.api/fork/fork_umask \
