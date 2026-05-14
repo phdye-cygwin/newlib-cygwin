@@ -1,0 +1,62 @@
+{
+  "meta": {
+    "date": "2026-05-14",
+    "label": "baseline",
+    "command": "./fork_bench --iterations=500 --warmup=50",
+    "hardware": "Intel i9-11900H, 64 GB RAM, xps-ne",
+    "os": "Windows 10.0.26200 (CYGWIN_NT-10.0-26200)",
+    "cygwin": "3.6.7-1 x86_64",
+    "cygwin_dll": "unpatched upstream main, commit a1f347c0d",
+    "notes": "Baseline for fork-replay-opt patch evaluation. No CYGWIN env overrides. Run with no other significant load."
+  },
+  "result": {
+    "schema": "fork-bench-v1",
+    "scenarios": [
+      {
+        "name": "fork-warm",
+        "min_us": 20159,
+        "median_us": 25373,
+        "p95_us": 34997,
+        "max_us": 220379,
+        "n": 500,
+        "outliers": 0
+      },
+      {
+        "name": "fork-pipe",
+        "min_us": 19055,
+        "median_us": 23120,
+        "p95_us": 30057,
+        "max_us": 163791,
+        "n": 500,
+        "outliers": 0
+      },
+      {
+        "name": "fork-exec",
+        "min_us": 48656,
+        "median_us": 57816,
+        "p95_us": 204890,
+        "max_us": 349590,
+        "n": 500,
+        "outliers": 0
+      },
+      {
+        "name": "fork-burst",
+        "min_us": 21649,
+        "median_us": 28759,
+        "p95_us": 34632,
+        "max_us": 41994,
+        "n": 500,
+        "outliers": 0
+      },
+      {
+        "name": "fork-deep",
+        "min_us": 166166,
+        "median_us": 226376,
+        "p95_us": 498069,
+        "max_us": 626676,
+        "n": 500,
+        "outliers": 0
+      }
+    ]
+  }
+}
