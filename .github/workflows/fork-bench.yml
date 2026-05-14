@@ -1,0 +1,89 @@
+name: fork-bench
+
+on:
+  push:
+    branches: ["benchmarks/fork"]
+    paths: ["bench/**"]
+  pull_request:
+    branches: ["benchmarks/fork"]
+    paths: ["bench/**"]
+  workflow_dispatch:
+
+jobs:
+  build-and-run:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Cygwin
+        uses: cygwin/cygwin-install-action@v4
+        with:
+          packages: gcc-core make python3
+
+      - name: Build
+        shell: C:\cygwin\bin\bash.exe --login -eo pipefail {0}
+        run: |
+          cd bench
+          make
+
+      - name: Run benchmark
+        shell: C:\cygwin\bin\bash.exe --login -eo pipefail {0}
+        run: |
+          cd bench
+          ./fork_bench --iterations=50 --warmup=10 | tee result.json
+
+      - name: Validate output format
+        shell: C:\cygwin\bin\bash.exe --login -eo pipefail {0}
+        run: |
+          cd bench
+          python3 - <<'EOF'
+          import json, sys
+
+          with open("result.json") as f:
+              data = json.load(f)
+
+          assert data.get("schema") == "fork-bench-v1", \
+              f"unexpected schema: {data.get('schema')}"
+
+          scenarios = data.get("scenarios", [])
+          assert len(scenarios) == 5, \
+              f"expected 5 scenarios, got {len(scenarios)}"
+
+          required_fields = {"name", "min_us", "median_us", "p95_us",
+                             "max_us", "n", "outliers"}
+          expected_names = {"fork-warm", "fork-pipe", "fork-exec",
+                            "fork-burst", "fork-deep"}
+          seen_names = set()
+
+          for scn in scenarios:
+              missing = required_fields - scn.keys()
+              assert not missing, \
+                  f"scenario {scn.get('name')} missing fields: {missing}"
+
+              name = scn["name"]
+              assert name in expected_names, f"unexpected scenario: {name}"
+              seen_names.add(name)
+
+              assert scn["median_us"] > 0, \
+                  f"scenario {name}: median_us is zero (benchmark may have failed)"
+              assert scn["n"] > 0, \
+                  f"scenario {name}: n is zero (no valid samples)"
+
+          missing_scenarios = expected_names - seen_names
+          assert not missing_scenarios, \
+              f"missing scenarios: {missing_scenarios}"
+
+          print("OK: schema fork-bench-v1, all 5 scenarios present, "
+                "all median_us > 0")
+          for scn in scenarios:
+              print(f"  {scn['name']}: median={scn['median_us']} µs  "
+                    f"p95={scn['p95_us']} µs  n={scn['n']}")
+          EOF
+
+      - name: Upload result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fork-bench-result
+          path: bench/result.json
